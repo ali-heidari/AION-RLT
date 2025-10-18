@@ -18,7 +18,7 @@ impl Worker {
     pub fn new(id: u32) -> Self {
         Self {
             id: id,
-            learning_rate: 0.01,
+            learning_rate: 0.00001,
         }
     }
 
@@ -69,7 +69,7 @@ impl Worker {
             }
             batch_counter += 1;
 
-            let batch = buffer.sample(CONFIG.total_batches);
+            let batch = buffer.sample(CONFIG.batch_size as usize);
             drop(buffer);
 
             let model = node.model.write().unwrap();

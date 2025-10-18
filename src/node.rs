@@ -15,8 +15,8 @@ impl Node {
             model: Arc::new(RwLock::new(Model::new().load_model().unwrap())),
             buffer: Arc::new(RwLock::new(ReplayBuffer::new(CONFIG.reply_capacity))),
             loss: Arc::new(RwLock::new(0.0)),
-            epsilon: RwLock::new(0.0),
-            temperature: RwLock::new(0.5),
+            epsilon: RwLock::new(0.2),
+            temperature: RwLock::new(3.0),
         }
     }
 }

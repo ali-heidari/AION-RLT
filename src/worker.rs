@@ -4,8 +4,8 @@ use super::configurations::CONFIG;
 use super::model::Model;
 use super::node::Node;
 use anyhow::{Ok, Result};
-use log::info;
-use ndarray::{Array1, Array2, s};
+use log::{info, warn};
+use ndarray::{s, Array1, Array2};
 use std::{sync::Arc, time::Duration};
 use tokio::time::sleep;
 
@@ -48,7 +48,16 @@ impl Worker {
         Ok(loss)
     }
 
-    pub async fn start(&self, node: Arc<Node>) -> Result<()> {
+    pub fn start(node: Arc<Node>) {
+        tokio::spawn(async move {
+            let worker = Worker::new(1);
+            if let Err(e) = worker.start_to_work(node).await {
+                warn!("training worker error: {:?}", e);
+            }
+        });
+    }
+
+    async fn start_to_work(&self, node: Arc<Node>) -> Result<()> {
         info!("Worker {} is working!", self.id);
 
         let mut batch_counter = 0;
@@ -74,9 +83,7 @@ impl Worker {
 
             let model = node.model.write().unwrap();
             let loss = self.train_on_batch(batch, model).unwrap();
-            {
-                node.loss.write().unwrap().clone_from(&loss);
-            }
+            node.set_loss(batch_counter, loss);
         }
         Ok(())
     }

@@ -1,7 +1,7 @@
 # config.toml
 debug = false
 
-train_interval_secs = 10
+train_interval_secs = 2
 batch_size=64
 total_batches=500
 input_number=6

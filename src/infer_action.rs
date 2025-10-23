@@ -2,7 +2,6 @@ use crate::configurations::CONFIG;
 use crate::model::Model;
 
 use super::node::Node;
-use log::info;
 use ndarray::Array2;
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::Rng;

@@ -8,6 +8,7 @@ mod reply_buffer;
 mod reward;
 mod worker;
 
+use aion_math::math::Math;
 use color_eyre::Result;
 use crossterm::event::{self, Event};
 use ratatui::{DefaultTerminal, Frame};
@@ -35,10 +36,10 @@ async fn main() {
 
     let n = node.clone();
     Worker::start(n);
-
+    let mut math = Math::new();
     loop {
         let features = state.next();
-        node.next(features);
+        node.next(features, &mut math);
 
         sleep(Duration::from_millis(10)).await;
     }

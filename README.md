@@ -26,7 +26,7 @@ It’s part of the **AIONX ecosystem**, an initiative to bring **AI-native intel
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/aion-rlt.git
+git clone https://github.com/ali-heidari/aion-rlt.git
 cd aion-rlt
 
 # Build the project using Cargo
@@ -103,9 +103,8 @@ AION-RLT is released under the **Apache 2.0 License**.
 
 ## Contact / Community
 
-* GitHub: [yourusername](https://github.com/ali-heidari)
-* Email: [your.email@example.com](mailto:ali-heidari@outlook.com)
+* GitHub: [ali-heidari](https://github.com/ali-heidari)
+* Email: [ali-heidaril@outlook.com](mailto:ali-heidari@outlook.com)
 * AIONX: [https://github.com/AIONX](https://github.com/AIONX)
 
-```
 

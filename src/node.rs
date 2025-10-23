@@ -1,4 +1,4 @@
-use log::{info};
+use log::info;
 
 use crate::{
     configurations::CONFIG, experience::Experience, infer_action::infer_action, model::Model,
@@ -10,7 +10,7 @@ use std::{
     time::Instant,
 };
 
-struct ActionDetails {
+pub struct ActionDetails {
     total: u32,
     success_count: u32,
 }
@@ -23,12 +23,12 @@ impl ActionDetails {
     fn add_failure(&mut self) {
         self.total += 1;
     }
-    fn get_success_rate(&self) -> u32 {
-        if self.total == 0 {
-            0 // Avoid division by zero
+    fn get_success_rate(&self) -> f32 {
+        return if self.total == 0 {
+            0.0 // Avoid division by zero
         } else {
-            self.success_count / self.total
-        }
+            self.success_count as f32/ self.total as f32
+        };
     }
 }
 
@@ -65,9 +65,22 @@ impl Node {
         }
     }
 
-    fn save_cycle(&mut self, predicted_action: u32, succeed: bool) {
+    fn save_cycle(&self, predicted_action: u32, succeed: bool) {
         let mut action_details_guard = self.action_details.write().unwrap();
-        let action_details = action_details_guard.get_mut(&predicted_action).unwrap();
+        let action_details_temp = action_details_guard.get_mut(&predicted_action);
+
+        let action_details = if action_details_temp.is_some() {
+            action_details_temp.unwrap()
+        } else {
+            action_details_guard.insert(
+                predicted_action,
+                ActionDetails {
+                    total: 0,
+                    success_count: 0,
+                },
+            );
+            action_details_guard.get_mut(&predicted_action).unwrap()
+        };
 
         if succeed {
             action_details.add_successful();
@@ -97,29 +110,31 @@ impl Node {
         );
 
         info!(
-            "epsilon: {}, temperatur: {}, loss: {}",
+            "epsilon: {}, temperature: {}, loss: {}",
             self.epsilon.read().unwrap(),
             self.temperature.read().unwrap(),
             self.loss.read().unwrap()
         );
         let action_details_guard = self.action_details.read().unwrap();
-        let ac0 = action_details_guard.get(&0).unwrap();
-        let ac1 = action_details_guard.get(&1).unwrap();
-        let ac2 = action_details_guard.get(&2).unwrap();
-        info!(
-            "Total action: [High pressure] {}\t[Normal] {}\t[Low pressure] {}",
-            ac0.total, ac1.total, ac2.total
-        );
-        info!(
-            "Success Rate: [High pressure] {:.2}\t[Normal] {:.2}\t[Low pressure] {:.2}",
-            ac0.get_success_rate(),
-            ac1.get_success_rate(),
-            ac2.get_success_rate(),
-        );
+        if action_details_guard.len() > 2 {
+            let ac0 = action_details_guard.get(&0).unwrap();
+            let ac1 = action_details_guard.get(&1).unwrap();
+            let ac2 = action_details_guard.get(&2).unwrap();
+            info!(
+                "Total action: [High pressure] {}\t[Normal] {}\t[Low pressure] {}",
+                ac0.total, ac1.total, ac2.total
+            );
+            info!(
+                "Success Rate: [High pressure] {:.2}\t[Normal] {:.2}\t[Low pressure] {:.2}",
+                ac0.get_success_rate(),
+                ac1.get_success_rate(),
+                ac2.get_success_rate(),
+            );
+        }
         println!("-----------------------------------------------------------------");
     }
 
-    pub fn next(&mut self, inputs: Vec<f32>) {
+    pub fn next(&self, inputs: Vec<f32>) {
         let (action, logits, probs) = infer_action(self, &inputs);
         let (reward, success) = compute_reward_with_success(&inputs, action as u8);
 
@@ -135,7 +150,8 @@ impl Node {
         };
         self.buffer.write().unwrap().push(ex);
 
-        if self.batch_history.read().unwrap().iter().last().unwrap().0 % 10 == 0 {
+        // let batches = self.batch_history.read();
+        // if batches.is_ok() && batches.unwrap().iter().last().unwrap_or((&0, &0.0)).0 % 10 == 0 {
             self.report(
                 inputs.as_slice().try_into().unwrap(),
                 logits.into_raw_vec_and_offset().0.try_into().unwrap(),
@@ -144,6 +160,6 @@ impl Node {
                 reward,
                 success,
             );
-        }
+        // }
     }
 }

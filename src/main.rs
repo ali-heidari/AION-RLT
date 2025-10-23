@@ -11,7 +11,7 @@ mod worker;
 use color_eyre::Result;
 use crossterm::event::{self, Event};
 use ratatui::{DefaultTerminal, Frame};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -30,19 +30,15 @@ fn use_tui() -> Result<(), color_eyre::Report> {
 #[tokio::main]
 async fn main() {
     env_logger::init();
-
     let mut state = SyntheticState::new();
-    let node = Arc::new(Mutex::new(Node::new()));
+    let node = Arc::new(Node::new());
 
     let n = node.clone();
-    Worker::start(n.lock().unwrap()); // Worker can also access safely
+    Worker::start(n);
 
     loop {
         let features = state.next();
-
-        // Lock before mutation
-        let mut node_guard = node.lock().unwrap();
-        node_guard.next(features);
+        node.next(features);
 
         sleep(Duration::from_millis(10)).await;
     }

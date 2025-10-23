@@ -126,29 +126,31 @@ impl Node {
         );
         let action_details_guard = self.action_details.read().unwrap();
         if action_details_guard.len() > 2 {
-            let ac0 = action_details_guard.get(&0).unwrap();
-            let ac1 = action_details_guard.get(&1).unwrap();
-            let ac2 = action_details_guard.get(&2).unwrap();
+            let success_rates = self.get_success_rates();
+            let totals = self.get_action_total();
             info!(
                 "Total action: [High pressure] {}\t[Normal] {}\t[Low pressure] {}",
-                ac0.total, ac1.total, ac2.total
+                totals[0], totals[1], totals[2]
             );
             info!(
                 "Success Rate: [High pressure] {:.2}\t[Normal] {:.2}\t[Low pressure] {:.2}",
-                ac0.get_success_rate(),
-                ac1.get_success_rate(),
-                ac2.get_success_rate(),
+                success_rates[0], success_rates[1], success_rates[2]
             );
             info!(
                 "Success Rate variance: {}",
-                Math::variance_of_ratios(vec![
-                    ac0.get_success_rate(),
-                    ac1.get_success_rate(),
-                    ac2.get_success_rate()
-                ])
+                Math::variance_of_ratios(success_rates)
             );
         }
         println!("-----------------------------------------------------------------");
+    }
+
+    fn get_action_total(&self) -> Vec<u32> {
+        let action_details_guard = self.action_details.read().unwrap();
+        let totals: Vec<u32> = action_details_guard
+            .keys()
+            .map(|key| action_details_guard.get(key).unwrap().total)
+            .collect();
+        totals
     }
 
     fn get_success_rates(&self) -> Vec<f32> {
@@ -180,14 +182,14 @@ impl Node {
         if action_details_guard.len() <= action {
             return reward;
         }
-        
+
         let action_ratios: Vec<f32> = self.get_action_ratios();
         let variance_action_ratios = Math::variance(action_ratios.clone());
 
         let success_rates = self.get_success_rates();
         let variance_success_rates = Math::variance_of_ratios(success_rates);
 
-        if variance_action_ratios <=0.01 && variance_success_rates <= 0.01 {
+        if variance_action_ratios <= 0.01 && variance_success_rates <= 0.01 {
             return reward;
         }
 

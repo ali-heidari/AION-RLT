@@ -180,13 +180,17 @@ impl Node {
         if action_details_guard.len() <= action {
             return reward;
         }
+        
+        let action_ratios: Vec<f32> = self.get_action_ratios();
+        let variance_action_ratios = Math::variance(action_ratios.clone());
+
         let success_rates = self.get_success_rates();
-        let variance = Math::variance_of_ratios(success_rates);
-        if variance <= 0.01 {
+        let variance_success_rates = Math::variance_of_ratios(success_rates);
+
+        if variance_action_ratios <=0.01 && variance_success_rates <= 0.01 {
             return reward;
         }
 
-        let action_ratios: Vec<f32> = self.get_action_ratios();
         let avg_ratio: f32 = 1.0 / action_ratios.len() as f32;
         let adjusted_reward = reward * (1.0 + (avg_ratio - &action_ratios[action]));
 

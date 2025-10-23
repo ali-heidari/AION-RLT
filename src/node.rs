@@ -1,3 +1,4 @@
+use aion_math::math::Math;
 use log::info;
 
 use crate::{
@@ -27,7 +28,7 @@ impl ActionDetails {
         return if self.total == 0 {
             0.0 // Avoid division by zero
         } else {
-            self.success_count as f32/ self.total as f32
+            self.success_count as f32 / self.total as f32
         };
     }
 }
@@ -40,6 +41,7 @@ pub struct Node {
     pub temperature: RwLock<f32>, // shared temperature value
     pub batch_history: RwLock<HashMap<u32, f32>>,
     pub action_details: RwLock<HashMap<u32, ActionDetails>>,
+    batch_sampled: RwLock<bool>,
 }
 
 impl Node {
@@ -52,6 +54,7 @@ impl Node {
             temperature: RwLock::new(1.0),
             batch_history: RwLock::new(HashMap::new()),
             action_details: RwLock::new(HashMap::new()),
+            batch_sampled: RwLock::new(false),
         }
     }
 
@@ -62,6 +65,7 @@ impl Node {
                 .write()
                 .unwrap()
                 .insert(batch_number, loss);
+            *self.batch_sampled.write().unwrap() = true;
         }
     }
 
@@ -97,6 +101,7 @@ impl Node {
         action: usize,
         reward: f32,
         success: bool,
+        math: &mut Math,
     ) {
         // TODO: Change the log using struct that provides inputs as vectors and custom log
         info!("Current features: CPU: {:.2}, MEM: {:.2}, SWAP: {:.2}, THROUGHPUT: {:.2}, LATENCY: {:.2}",
@@ -109,11 +114,15 @@ impl Node {
             action, reward, success
         );
 
+        let loss_avg = math.calc_avg_and_trend(*self.loss.read().unwrap(), 0.05);
         info!(
-            "epsilon: {}, temperature: {}, loss: {}",
+            "epsilon: {}, temperature: {}, loss: {}, loss_avg: {}, loss_trend: {}, batch: #{}",
             self.epsilon.read().unwrap(),
             self.temperature.read().unwrap(),
-            self.loss.read().unwrap()
+            self.loss.read().unwrap(),
+            loss_avg.0,
+            loss_avg.1,
+            self.batch_history.read().unwrap().len()
         );
         let action_details_guard = self.action_details.read().unwrap();
         if action_details_guard.len() > 2 {
@@ -130,28 +139,79 @@ impl Node {
                 ac1.get_success_rate(),
                 ac2.get_success_rate(),
             );
+            info!(
+                "Success Rate variance: {}",
+                Math::variance_of_ratios(vec![
+                    ac0.get_success_rate(),
+                    ac1.get_success_rate(),
+                    ac2.get_success_rate()
+                ])
+            );
         }
         println!("-----------------------------------------------------------------");
     }
 
-    pub fn next(&self, inputs: Vec<f32>) {
+    fn get_success_rates(&self) -> Vec<f32> {
+        let action_details_guard = self.action_details.read().unwrap();
+        let success_rates: Vec<f32> = action_details_guard
+            .keys()
+            .map(|key| action_details_guard.get(key).unwrap().get_success_rate())
+            .collect();
+        success_rates
+    }
+
+    fn get_action_ratios(&self) -> Vec<f32> {
+        let action_details_guard = self.action_details.read().unwrap();
+        let action_ratios: Vec<f32> = action_details_guard
+            .keys()
+            .map(|key| {
+                action_details_guard.get(key).unwrap().total as f32
+                    / action_details_guard
+                        .iter()
+                        .map(|detail| detail.1.total as f32)
+                        .sum::<f32>()
+            })
+            .collect();
+        action_ratios
+    }
+
+    fn adjust_settings(&self, action: usize, reward: f32) -> f32 {
+        let action_details_guard = self.action_details.read().unwrap();
+        if action_details_guard.len() <= action {
+            return reward;
+        }
+        let success_rates = self.get_success_rates();
+        let variance = Math::variance_of_ratios(success_rates);
+        if variance <= 0.01 {
+            return reward;
+        }
+
+        let action_ratios: Vec<f32> = self.get_action_ratios();
+        let avg_ratio: f32 = 1.0 / action_ratios.len() as f32;
+        let adjusted_reward = reward * (1.0 + (avg_ratio - &action_ratios[action]));
+
+        adjusted_reward
+    }
+
+    pub fn next(&self, inputs: Vec<f32>, math: &mut Math) {
         let (action, logits, probs) = infer_action(self, &inputs);
         let (reward, success) = compute_reward_with_success(&inputs, action as u8);
 
-        self.save_cycle(action as u32, success);
+        let adjusted_reward = self.adjust_settings(action, reward);
 
         let ex = Experience {
             features: inputs.clone(),
             action: action as u8,
             latency_ms: *inputs.get(5).unwrap(),
-            reward: reward,
+            reward: adjusted_reward,
             success: success,
             timestamp_ms: Instant::now().elapsed().as_millis(),
         };
         self.buffer.write().unwrap().push(ex);
 
-        // let batches = self.batch_history.read();
-        // if batches.is_ok() && batches.unwrap().iter().last().unwrap_or((&0, &0.0)).0 % 10 == 0 {
+        self.save_cycle(action as u32, success);
+
+        if *self.batch_sampled.read().unwrap() {
             self.report(
                 inputs.as_slice().try_into().unwrap(),
                 logits.into_raw_vec_and_offset().0.try_into().unwrap(),
@@ -159,7 +219,9 @@ impl Node {
                 action,
                 reward,
                 success,
+                math,
             );
-        // }
+            *self.batch_sampled.write().unwrap() = false;
+        }
     }
 }

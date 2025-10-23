@@ -36,6 +36,7 @@ async fn main() {
 
     let n = node.clone();
     Worker::start(n);
+    
     let mut math = Math::new();
     loop {
         let features = state.next();

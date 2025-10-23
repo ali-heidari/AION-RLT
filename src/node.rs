@@ -50,8 +50,8 @@ impl Node {
             model: Arc::new(RwLock::new(Model::new().load_model().unwrap())),
             buffer: Arc::new(RwLock::new(ReplayBuffer::new(CONFIG.reply_capacity))),
             loss: Arc::new(RwLock::new(0.0)),
-            epsilon: RwLock::new(0.05),
-            temperature: RwLock::new(1.0),
+            epsilon: RwLock::new(0.5),
+            temperature: RwLock::new(3.0),
             batch_history: RwLock::new(HashMap::new()),
             action_details: RwLock::new(HashMap::new()),
             batch_sampled: RwLock::new(false),
@@ -182,7 +182,6 @@ impl Node {
         if action_details_guard.len() <= action {
             return reward;
         }
-
         let action_ratios: Vec<f32> = self.get_action_ratios();
         let variance_action_ratios = Math::variance(action_ratios.clone());
 
@@ -190,11 +189,18 @@ impl Node {
         let variance_success_rates = Math::variance_of_ratios(success_rates);
 
         if variance_action_ratios <= 0.01 && variance_success_rates <= 0.01 {
+            {
+                let mut epsilon = *self.epsilon.read().unwrap();
+                epsilon = (epsilon * 0.995).max(0.05);
+                *self.epsilon.write().unwrap() = epsilon;
+            }
             return reward;
         }
 
         let avg_ratio: f32 = 1.0 / action_ratios.len() as f32;
         let adjusted_reward = reward * (1.0 + (avg_ratio - &action_ratios[action]));
+
+        // println!("========>>>>>>>>>>>>>>>> Adjustment for action {} and reward {} with adjusted reward {} and epsilon: {}",action,reward,adjusted_reward,*self.epsilon.read().unwrap());
 
         adjusted_reward
     }

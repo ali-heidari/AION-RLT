@@ -102,6 +102,7 @@ impl Node {
         reward: f32,
         success: bool,
         math: &mut Math,
+        adjusted_reward: f32,
     ) {
         // TODO: Change the log using struct that provides inputs as vectors and custom log
         info!("Current features: CPU: {:.2}, MEM: {:.2}, SWAP: {:.2}, THROUGHPUT: {:.2}, LATENCY: {:.2}",
@@ -110,8 +111,8 @@ impl Node {
         info!("logits: {:?}", logits);
         info!("probs: {:?}", probs);
         info!(
-            "Action taken: {}, Reward: {:.3}, Success: {}",
-            action, reward, success
+            "Action taken: {}, Reward: {:.3}, adjusted_Reward: {:.3}, Success: {}",
+            action, reward, adjusted_reward, success
         );
 
         let loss_avg = math.calc_avg_and_trend(*self.loss.read().unwrap(), 0.05);
@@ -137,8 +138,10 @@ impl Node {
                 success_rates[0], success_rates[1], success_rates[2]
             );
             info!(
-                "Success Rate variance: {}",
-                Math::variance_of_ratios(success_rates)
+                "[variance] Success Rate: {}, logits: {}, probs: {},",
+                Math::variance_of_ratios(success_rates),
+                Math::variance(logits.to_vec()),
+                Math::variance(probs.to_vec())
             );
         }
         println!("-----------------------------------------------------------------");
@@ -177,6 +180,33 @@ impl Node {
         action_ratios
     }
 
+    fn adjust_epsilon(&self, push_down: bool) {
+        let mut epsilon = *self.epsilon.read().unwrap();
+        if push_down {
+            epsilon = (epsilon * 0.995).max(0.05);
+        } else {
+            epsilon = (epsilon + 0.01).min(1.0);
+        }
+        *self.epsilon.write().unwrap() = epsilon;
+    }
+
+    fn adjust_temperature(&self, push_down: bool) {
+        let mut temperature = *self.temperature.read().unwrap();
+        if push_down {
+            temperature = (temperature * 0.995).max(1.0);
+        } else {
+            temperature = (temperature + 0.01).min(10.0);
+        }
+        *self.temperature.write().unwrap() = temperature;
+    }
+
+    fn adjust_factors(&self, down_trend: bool) {
+        if *self.batch_sampled.read().unwrap() {
+            self.adjust_epsilon(down_trend);
+            self.adjust_temperature(down_trend);
+        }
+    }
+
     fn adjust_settings(&self, action: usize, reward: f32) -> f32 {
         let action_details_guard = self.action_details.read().unwrap();
         if action_details_guard.len() <= action {
@@ -189,20 +219,16 @@ impl Node {
         let variance_success_rates = Math::variance_of_ratios(success_rates);
 
         if variance_action_ratios <= 0.01 && variance_success_rates <= 0.01 {
-            {
-                let mut epsilon = *self.epsilon.read().unwrap();
-                epsilon = (epsilon * 0.995).max(0.05);
-                *self.epsilon.write().unwrap() = epsilon;
-            }
+            self.adjust_factors(true);
             return reward;
         }
+
+        self.adjust_factors(false);
 
         let avg_ratio: f32 = 1.0 / action_ratios.len() as f32;
         let adjusted_reward = reward * (1.0 + (avg_ratio - &action_ratios[action]));
 
-        // println!("========>>>>>>>>>>>>>>>> Adjustment for action {} and reward {} with adjusted reward {} and epsilon: {}",action,reward,adjusted_reward,*self.epsilon.read().unwrap());
-
-        adjusted_reward
+        adjusted_reward.clamp(-1.0, 1.0)
     }
 
     pub fn next(&self, inputs: Vec<f32>, math: &mut Math) {
@@ -232,6 +258,7 @@ impl Node {
                 reward,
                 success,
                 math,
+                adjusted_reward,
             );
             *self.batch_sampled.write().unwrap() = false;
         }

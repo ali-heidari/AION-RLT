@@ -138,7 +138,8 @@ impl Node {
                 success_rates[0], success_rates[1], success_rates[2]
             );
             info!(
-                "[variance] Success Rate: {}, logits: {}, probs: {},",
+                "[variance] Total: {}, Success Rate: {}, logits: {}, probs: {},",
+                Math::variance_of_ratios(totals.iter().map(|x| *x as f32).collect()),
                 Math::variance_of_ratios(success_rates),
                 Math::variance(logits.to_vec()),
                 Math::variance(probs.to_vec())
@@ -195,7 +196,7 @@ impl Node {
         if push_down {
             temperature = (temperature * 0.995).max(1.0);
         } else {
-            temperature = (temperature + 0.01).min(10.0);
+            temperature = (temperature + 0.01).min(3.0);
         }
         *self.temperature.write().unwrap() = temperature;
     }
@@ -207,26 +208,38 @@ impl Node {
         }
     }
 
-    fn adjust_settings(&self, action: usize, reward: f32) -> f32 {
+    fn adjust_settings(&self, action: usize, reward: f32, success: bool) -> f32 {
         let action_details_guard = self.action_details.read().unwrap();
         if action_details_guard.len() <= action {
             return reward;
         }
         let action_ratios: Vec<f32> = self.get_action_ratios();
-        let variance_action_ratios = Math::variance(action_ratios.clone());
+        let variance_action_ratios = Math::variance_of_ratios(action_ratios.clone());
 
         let success_rates = self.get_success_rates();
-        let variance_success_rates = Math::variance_of_ratios(success_rates);
+        let variance_success_rates = Math::variance_of_ratios(success_rates.clone());
 
         if variance_action_ratios <= 0.01 && variance_success_rates <= 0.01 {
             self.adjust_factors(true);
             return reward;
         }
 
-        self.adjust_factors(false);
+        let min_success_rate = 85.0_f32;
+        if *success_rates
+            .iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less))
+            .unwrap()
+            < min_success_rate
+        {
+            self.adjust_factors(false);
+        }
 
         let avg_ratio: f32 = 1.0 / action_ratios.len() as f32;
-        let adjusted_reward = reward * (1.0 + (avg_ratio - &action_ratios[action]));
+        let adjusted_reward = if success {
+            reward * (1.0 + (avg_ratio - &action_ratios[action]))
+        } else {
+            reward * (1.0 + (avg_ratio - &action_ratios[action]).abs() * 0.25)
+        };
 
         adjusted_reward.clamp(-1.0, 1.0)
     }
@@ -235,7 +248,7 @@ impl Node {
         let (action, logits, probs) = infer_action(self, &inputs);
         let (reward, success) = compute_reward_with_success(&inputs, action as u8);
 
-        let adjusted_reward = self.adjust_settings(action, reward);
+        let adjusted_reward = self.adjust_settings(action, reward, success);
 
         let ex = Experience {
             features: inputs.clone(),

@@ -3,7 +3,7 @@ use log::info;
 
 use crate::{
     configurations::CONFIG, experience::Experience, infer_action::infer_action, model::Model,
-    reply_buffer::ReplayBuffer, reward::compute_reward_with_success,
+    reply_buffer::ReplayBuffer, reward::compute_reward_with_success, worker::Worker,
 };
 use std::{
     collections::HashMap,
@@ -14,6 +14,7 @@ use std::{
 pub struct ActionDetails {
     total: u32,
     success_count: u32,
+    reward: f32,
 }
 
 impl ActionDetails {
@@ -41,7 +42,8 @@ pub struct Node {
     pub temperature: RwLock<f32>, // shared temperature value
     pub batch_history: RwLock<HashMap<u32, f32>>,
     pub action_details: RwLock<HashMap<u32, ActionDetails>>,
-    batch_sampled: RwLock<bool>,
+    pub batch_sampled: RwLock<bool>,
+    enable_adjustment: RwLock<bool>,
 }
 
 impl Node {
@@ -55,7 +57,13 @@ impl Node {
             batch_history: RwLock::new(HashMap::new()),
             action_details: RwLock::new(HashMap::new()),
             batch_sampled: RwLock::new(false),
+            enable_adjustment: RwLock::new(false),
         }
+    }
+
+    pub fn start_training(node: Arc<Node>) {
+        *node.enable_adjustment.write().unwrap() = true;
+        Worker::start(node);
     }
 
     pub fn set_loss(&self, batch_number: u32, loss: f32) {
@@ -81,6 +89,7 @@ impl Node {
                 ActionDetails {
                     total: 0,
                     success_count: 0,
+                    reward: 0.0,
                 },
             );
             action_details_guard.get_mut(&predicted_action).unwrap()
@@ -105,8 +114,9 @@ impl Node {
         adjusted_reward: f32,
     ) {
         // TODO: Change the log using struct that provides inputs as vectors and custom log
-        info!("Current features: CPU: {:.2}, MEM: {:.2}, SWAP: {:.2}, THROUGHPUT: {:.2}, LATENCY: {:.2}",
-        inputs[0], inputs[1], inputs[2], inputs[3], inputs[4]);
+
+        info!("Current features: CPU: {:.2}, MEM: {:.2}, SWAP: {:.2}, DISK: {:.2}, THROUGHPUT: {:.2}, LATENCY: {:.2}",
+        inputs[0], inputs[1], inputs[2], inputs[3], inputs[4], inputs[5]);
 
         info!("logits: {:?}", logits);
         info!("probs: {:?}", probs);
@@ -117,7 +127,7 @@ impl Node {
 
         let loss_avg = math.calc_avg_and_trend(*self.loss.read().unwrap(), 0.05);
         info!(
-            "epsilon: {}, temperature: {}, loss: {}, loss_avg: {}, loss_trend: {}, batch: #{}",
+            "epsilon: {:.3}, temperature: {:.3}, loss: {:.3}, loss_avg: {:.3}, loss_trend: {:.3}, batch: #{}",
             self.epsilon.read().unwrap(),
             self.temperature.read().unwrap(),
             self.loss.read().unwrap(),
@@ -138,7 +148,13 @@ impl Node {
                 success_rates[0], success_rates[1], success_rates[2]
             );
             info!(
-                "[variance] Total: {}, Success Rate: {}, logits: {}, probs: {},",
+                "Reward average: [High pressure] {:.2}\t[Normal] {:.2}\t[Low pressure] {:.2}",
+                action_details_guard.get(&0).unwrap().reward / totals[0] as f32,
+                action_details_guard.get(&1).unwrap().reward / totals[1] as f32,
+                action_details_guard.get(&2).unwrap().reward / totals[2] as f32
+            );
+            info!(
+                "[variance] Total: {:.3}, Success Rate: {:.3}, logits: {:.3}, probs: {:.3},",
                 Math::variance_of_ratios(totals.iter().map(|x| *x as f32).collect()),
                 Math::variance_of_ratios(success_rates),
                 Math::variance(logits.to_vec()),
@@ -186,7 +202,7 @@ impl Node {
         if push_down {
             epsilon = (epsilon * 0.995).max(0.05);
         } else {
-            epsilon = (epsilon + 0.01).min(1.0);
+            epsilon = (epsilon + 0.01).min(0.5);
         }
         *self.epsilon.write().unwrap() = epsilon;
     }
@@ -202,10 +218,8 @@ impl Node {
     }
 
     fn adjust_factors(&self, down_trend: bool) {
-        if *self.batch_sampled.read().unwrap() {
-            self.adjust_epsilon(down_trend);
-            self.adjust_temperature(down_trend);
-        }
+        self.adjust_epsilon(down_trend);
+        self.adjust_temperature(down_trend);
     }
 
     fn adjust_settings(&self, action: usize, reward: f32, success: bool) -> f32 {
@@ -219,28 +233,18 @@ impl Node {
         let success_rates = self.get_success_rates();
         let variance_success_rates = Math::variance_of_ratios(success_rates.clone());
 
-        if variance_action_ratios <= 0.01 && variance_success_rates <= 0.01 {
-            self.adjust_factors(true);
-            return reward;
-        }
+        self.adjust_factors(variance_action_ratios <= 0.01);
 
-        let min_success_rate = 85.0_f32;
-        if *success_rates
-            .iter()
-            .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less))
-            .unwrap()
-            < min_success_rate
-        {
-            self.adjust_factors(false);
+        if variance_action_ratios <= 0.01 && variance_success_rates <= 0.01 {
+            return reward;
         }
 
         let avg_ratio: f32 = 1.0 / action_ratios.len() as f32;
         let adjusted_reward = if success {
-            reward * (1.0 + (avg_ratio - &action_ratios[action]))
+            reward * (1.0 + 0.5 * (avg_ratio - &action_ratios[action]))
         } else {
             reward * (1.0 + (avg_ratio - &action_ratios[action]).abs() * 0.25)
         };
-
         adjusted_reward.clamp(-1.0, 1.0)
     }
 
@@ -248,7 +252,11 @@ impl Node {
         let (action, logits, probs) = infer_action(self, &inputs);
         let (reward, success) = compute_reward_with_success(&inputs, action as u8);
 
-        let adjusted_reward = self.adjust_settings(action, reward, success);
+        let adjusted_reward = if *self.enable_adjustment.read().unwrap() {
+            self.adjust_settings(action, reward, success)
+        } else {
+            reward
+        };
 
         let ex = Experience {
             features: inputs.clone(),
@@ -261,6 +269,12 @@ impl Node {
         self.buffer.write().unwrap().push(ex);
 
         self.save_cycle(action as u32, success);
+
+        {
+            let a = action as u32;
+            let mut action_details_guard = self.action_details.write().unwrap();
+            action_details_guard.get_mut(&a).unwrap().reward += adjusted_reward;
+        }
 
         if *self.batch_sampled.read().unwrap() {
             self.report(

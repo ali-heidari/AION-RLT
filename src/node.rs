@@ -69,7 +69,7 @@ impl Node {
 
     pub async fn start<F>(input_bearer: F, mode: RunningMode)
     where
-        F: Fn() -> Vec<f32>,
+        F: Fn(u32) -> Vec<f32>,
     {
         let node = Arc::new(Node::new(0.05, 0.5));
         if let RunningMode::Training = mode {
@@ -78,7 +78,24 @@ impl Node {
 
         let mut math = Math::new();
         loop {
-            let inputs = input_bearer();
+            let mut inputs = vec![];
+            {
+                let action_detail_guard = node.action_details.read().unwrap();
+                let lowest_state = action_detail_guard
+                    .iter()
+                    .min_by_key(|&(_key, value)| value.total)
+                    .unwrap_or((
+                        &u32::MAX,
+                        &ActionDetails {
+                            total: 0,
+                            success_count: 0,
+                            reward: 0.0,
+                        },
+                    ))
+                    .0
+                    .clone();
+                inputs = input_bearer(lowest_state);
+            }
             node.next(inputs, &mut math);
             sleep(Duration::from_millis(10)).await;
 

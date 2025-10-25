@@ -26,8 +26,8 @@ fn use_tui() -> Result<(), color_eyre::Report> {
     result
 }
 
-fn get_features(state: &mut SyntheticState) -> Vec<f32> {
-    let features = state.next(mock::Mode::Generative, 0.0, 0.0);
+fn get_features(state: &mut SyntheticState, lowest_state: u32) -> Vec<f32> {
+    let features = state.next(mock::Mode::Generative, 0.0, 0.0, lowest_state);
     features
 }
 
@@ -57,6 +57,7 @@ fn from_csv_dataset(state: &mut SyntheticState) -> Result<()> {
                 .unwrap()
                 .div(100.0)
                 .clamp(0.05, max),
+            100,
         );
     }
     Ok(())
@@ -69,7 +70,7 @@ async fn main() -> Result<()> {
     let cloned_state = Arc::clone(&state);
 
     Node::start(
-        move || get_features(&mut cloned_state.lock().unwrap()),
+        move |lowest_state| get_features(&mut cloned_state.lock().unwrap(), lowest_state),
         RunningMode::Training,
     )
     .await;

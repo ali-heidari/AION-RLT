@@ -42,22 +42,22 @@ pub struct Node {
     pub temperature: RwLock<f32>, // shared temperature value
     pub batch_history: RwLock<HashMap<u32, f32>>,
     pub action_details: RwLock<HashMap<u32, ActionDetails>>,
-    pub batch_sampled: RwLock<bool>,
     enable_adjustment: RwLock<bool>,
+    counter: RwLock<u64>,
 }
 
 impl Node {
-    pub fn new() -> Self {
+    pub fn new(epsilon: f32, temperature: f32) -> Self {
         Self {
             model: Arc::new(RwLock::new(Model::new().load_model().unwrap())),
             buffer: Arc::new(RwLock::new(ReplayBuffer::new(CONFIG.reply_capacity))),
             loss: Arc::new(RwLock::new(0.0)),
-            epsilon: RwLock::new(0.5),
-            temperature: RwLock::new(3.0),
+            epsilon: RwLock::new(epsilon),
+            temperature: RwLock::new(temperature),
             batch_history: RwLock::new(HashMap::new()),
             action_details: RwLock::new(HashMap::new()),
-            batch_sampled: RwLock::new(false),
             enable_adjustment: RwLock::new(false),
+            counter: RwLock::new(0),
         }
     }
 
@@ -73,7 +73,6 @@ impl Node {
                 .write()
                 .unwrap()
                 .insert(batch_number, loss);
-            *self.batch_sampled.write().unwrap() = true;
         }
     }
 
@@ -166,34 +165,38 @@ impl Node {
 
     fn get_action_total(&self) -> Vec<u32> {
         let action_details_guard = self.action_details.read().unwrap();
-        let totals: Vec<u32> = action_details_guard
-            .keys()
-            .map(|key| action_details_guard.get(key).unwrap().total)
-            .collect();
+        let mut totals = vec![0; CONFIG.output_number];
+        action_details_guard.keys().for_each(|key| {
+            totals[*key as usize] = action_details_guard.get(key).unwrap().total;
+        });
+
         totals
     }
 
     fn get_success_rates(&self) -> Vec<f32> {
         let action_details_guard = self.action_details.read().unwrap();
-        let success_rates: Vec<f32> = action_details_guard
-            .keys()
-            .map(|key| action_details_guard.get(key).unwrap().get_success_rate())
-            .collect();
+
+        let mut success_rates = vec![0.0; CONFIG.output_number];
+        action_details_guard.keys().for_each(|key| {
+            success_rates[*key as usize] =
+                action_details_guard.get(key).unwrap().get_success_rate();
+        });
+
         success_rates
     }
 
     fn get_action_ratios(&self) -> Vec<f32> {
         let action_details_guard = self.action_details.read().unwrap();
-        let action_ratios: Vec<f32> = action_details_guard
-            .keys()
-            .map(|key| {
-                action_details_guard.get(key).unwrap().total as f32
-                    / action_details_guard
-                        .iter()
-                        .map(|detail| detail.1.total as f32)
-                        .sum::<f32>()
-            })
-            .collect();
+
+        let mut action_ratios = vec![0.0; CONFIG.output_number];
+        action_details_guard.keys().for_each(|key| {
+            action_ratios[*key as usize] = action_details_guard.get(key).unwrap().total as f32
+                / action_details_guard
+                    .iter()
+                    .map(|detail| detail.1.total as f32)
+                    .sum::<f32>()
+        });
+
         action_ratios
     }
 
@@ -210,9 +213,9 @@ impl Node {
     fn adjust_temperature(&self, push_down: bool) {
         let mut temperature = *self.temperature.read().unwrap();
         if push_down {
-            temperature = (temperature * 0.995).max(1.0);
+            temperature = (temperature * 0.995).max(0.5);
         } else {
-            temperature = (temperature + 0.01).min(3.0);
+            temperature = (temperature + 0.01).min(5.0);
         }
         *self.temperature.write().unwrap() = temperature;
     }
@@ -228,10 +231,10 @@ impl Node {
             return reward;
         }
         let action_ratios: Vec<f32> = self.get_action_ratios();
-        let variance_action_ratios = Math::variance_of_ratios(action_ratios.clone());
+        let variance_action_ratios = Math::variance(action_ratios.clone());
 
         let success_rates = self.get_success_rates();
-        let variance_success_rates = Math::variance_of_ratios(success_rates.clone());
+        let variance_success_rates = Math::variance(success_rates.clone());
 
         self.adjust_factors(variance_action_ratios <= 0.01);
 
@@ -243,7 +246,7 @@ impl Node {
         let adjusted_reward = if success {
             reward * (1.0 + 0.5 * (avg_ratio - &action_ratios[action]))
         } else {
-            reward * (1.0 + (avg_ratio - &action_ratios[action]).abs() * 0.25)
+            reward * (1.0 - 0.25 * (avg_ratio - action_ratios[action]).abs())
         };
         adjusted_reward.clamp(-1.0, 1.0)
     }
@@ -276,7 +279,9 @@ impl Node {
             action_details_guard.get_mut(&a).unwrap().reward += adjusted_reward;
         }
 
-        if *self.batch_sampled.read().unwrap() {
+        *self.counter.write().unwrap() += 1;
+
+        if *self.counter.read().unwrap() % CONFIG.log_interval == 0 {
             self.report(
                 inputs.as_slice().try_into().unwrap(),
                 logits.into_raw_vec_and_offset().0.try_into().unwrap(),
@@ -287,7 +292,6 @@ impl Node {
                 math,
                 adjusted_reward,
             );
-            *self.batch_sampled.write().unwrap() = false;
         }
     }
 }

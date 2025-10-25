@@ -13,6 +13,7 @@ pub struct Configurations {
     pub hidden_layers: usize,
     pub reply_capacity: usize,
     pub model_name: String,
+    pub log_interval: u64
 }
 
 fn load_config() -> Result<Arc<Configurations>, config::ConfigError> {

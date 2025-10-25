@@ -1,5 +1,6 @@
 use aion_math::math::Math;
 use log::info;
+use tokio::time::sleep;
 
 use crate::{
     configurations::CONFIG, experience::Experience, infer_action::infer_action, model::Model,
@@ -8,8 +9,13 @@ use crate::{
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
-    time::Instant,
+    time::{Duration, Instant},
 };
+
+pub enum RunningMode {
+    Infer,
+    Training,
+}
 
 pub struct ActionDetails {
     total: u32,
@@ -58,6 +64,29 @@ impl Node {
             action_details: RwLock::new(HashMap::new()),
             enable_adjustment: RwLock::new(false),
             counter: RwLock::new(0),
+        }
+    }
+
+    pub async fn start<F>(input_bearer: F, mode: RunningMode)
+    where
+        F: Fn() -> Vec<f32>,
+    {
+        let node = Arc::new(Node::new(0.05, 0.5));
+        if let RunningMode::Training = mode {
+            Node::start_training(node.clone());
+        }
+
+        let mut math = Math::new();
+        loop {
+            let inputs = input_bearer();
+            node.next(inputs, &mut math);
+            sleep(Duration::from_millis(10)).await;
+
+            if *node.counter.read().unwrap()
+                > (CONFIG.total_batches as u64 * CONFIG.batch_size as u64)
+            {
+                break;
+            }
         }
     }
 

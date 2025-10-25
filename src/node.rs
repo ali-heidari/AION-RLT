@@ -81,20 +81,15 @@ impl Node {
             let mut inputs = vec![];
             {
                 let action_detail_guard = node.action_details.read().unwrap();
+                let total_avg: f32 =
+                    *node.counter.read().unwrap() as f32 / action_detail_guard.len() as f32 * 0.7;
                 let lowest_state = action_detail_guard
                     .iter()
-                    .min_by_key(|&(_key, value)| value.total)
-                    .unwrap_or((
-                        &u32::MAX,
-                        &ActionDetails {
-                            total: 0,
-                            success_count: 0,
-                            reward: 0.0,
-                        },
-                    ))
-                    .0
-                    .clone();
-                inputs = input_bearer(lowest_state);
+                    .map(|x| (*x.0, x.1.total as f32 - total_avg))
+                    .min_by(|x, y| (x.1).partial_cmp(&y.1).unwrap())
+                    .unwrap_or((u32::MAX, 0.0))
+                    .0;
+                inputs = input_bearer(lowest_state as u32);
             }
             node.next(inputs, &mut math);
             sleep(Duration::from_millis(10)).await;
@@ -114,6 +109,8 @@ impl Node {
 
     pub fn set_loss(&self, batch_number: u32, loss: f32) {
         {
+            self.adjust_factors(*self.loss.read().unwrap() > loss);
+
             *self.loss.write().unwrap() = loss;
             self.batch_history
                 .write()
@@ -281,8 +278,6 @@ impl Node {
 
         let success_rates = self.get_success_rates();
         let variance_success_rates = Math::variance(success_rates.clone());
-
-        self.adjust_factors(variance_action_ratios <= 0.01);
 
         if variance_action_ratios <= 0.01 && variance_success_rates <= 0.01 {
             return reward;

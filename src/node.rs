@@ -1,10 +1,11 @@
+use crate::get_config as CONFIG;
 use aion_math::math::Math;
 use log::info;
 use tokio::time::sleep;
 
 use crate::{
-    configurations::CONFIG, experience::Experience, infer_action::infer_action, model::Model,
-    reply_buffer::ReplayBuffer, worker::Worker,
+    experience::Experience, infer_action::infer_action, model::Model, reply_buffer::ReplayBuffer,
+    worker::Worker,
 };
 use std::{
     collections::HashMap,
@@ -56,7 +57,7 @@ impl Node {
     pub fn new(epsilon: f32, temperature: f32) -> Self {
         Self {
             model: Arc::new(RwLock::new(Model::new().load_model().unwrap())),
-            buffer: Arc::new(RwLock::new(ReplayBuffer::new(CONFIG.reply_capacity))),
+            buffer: Arc::new(RwLock::new(ReplayBuffer::new(CONFIG().reply_capacity))),
             loss: Arc::new(RwLock::new(0.0)),
             epsilon: RwLock::new(epsilon),
             temperature: RwLock::new(temperature),
@@ -96,7 +97,7 @@ impl Node {
             sleep(Duration::from_millis(10)).await;
 
             if *node.counter.read().unwrap()
-                > (CONFIG.total_batches as u64 * CONFIG.batch_size as u64)
+                > (CONFIG().total_batches as u64 * CONFIG().batch_size as u64)
             {
                 break;
             }
@@ -213,7 +214,7 @@ impl Node {
 
     fn get_action_total(&self) -> Vec<u32> {
         let action_details_guard = self.action_details.read().unwrap();
-        let mut totals = vec![0; CONFIG.output_number];
+        let mut totals = vec![0; CONFIG().output_number];
         action_details_guard.keys().for_each(|key| {
             totals[*key as usize] = action_details_guard.get(key).unwrap().total;
         });
@@ -224,7 +225,7 @@ impl Node {
     fn get_success_rates(&self) -> Vec<f32> {
         let action_details_guard = self.action_details.read().unwrap();
 
-        let mut success_rates = vec![0.0; CONFIG.output_number];
+        let mut success_rates = vec![0.0; CONFIG().output_number];
         action_details_guard.keys().for_each(|key| {
             success_rates[*key as usize] =
                 action_details_guard.get(key).unwrap().get_success_rate();
@@ -236,7 +237,7 @@ impl Node {
     fn get_action_ratios(&self) -> Vec<f32> {
         let action_details_guard = self.action_details.read().unwrap();
 
-        let mut action_ratios = vec![0.0; CONFIG.output_number];
+        let mut action_ratios = vec![0.0; CONFIG().output_number];
         action_details_guard.keys().for_each(|key| {
             action_ratios[*key as usize] = action_details_guard.get(key).unwrap().total as f32
                 / action_details_guard
@@ -333,7 +334,7 @@ impl Node {
 
         *self.counter.write().unwrap() += 1;
 
-        if *self.counter.read().unwrap() % CONFIG.log_interval == 0 {
+        if *self.counter.read().unwrap() % CONFIG().log_interval == 0 {
             self.report(
                 inputs.as_slice().try_into().unwrap(),
                 logits.into_raw_vec_and_offset().0.try_into().unwrap(),

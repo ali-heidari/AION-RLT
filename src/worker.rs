@@ -1,6 +1,6 @@
 use crate::experience::Experience;
+use crate::get_config as CONFIG;
 
-use super::configurations::CONFIG;
 use super::model::Model;
 use super::node::Node;
 use anyhow::{Ok, Result};
@@ -27,13 +27,13 @@ impl Worker {
         batch: Vec<Experience>,
         mut model: std::sync::RwLockWriteGuard<'_, Model>,
     ) -> Result<f32> {
-        let mut inputs = Array2::<f32>::zeros((batch.len(), CONFIG.input_number as usize));
+        let mut inputs = Array2::<f32>::zeros((batch.len(), CONFIG().input_number as usize));
         let mut predicted_action = Array1::<usize>::zeros(batch.len());
         let mut rewards = Array1::<f32>::zeros(batch.len());
 
         for (i, experience) in batch.iter().enumerate() {
             inputs.slice_mut(s![i, ..]).assign(&Array1::from(
-                experience.features[..CONFIG.input_number].to_vec(),
+                experience.features[..CONFIG().input_number].to_vec(),
             ));
             predicted_action[i] = experience.action as usize;
             rewards[i] = experience.reward.clamp(-1.0, 1.0);
@@ -63,22 +63,22 @@ impl Worker {
         let mut batch_counter = 0;
 
         loop {
-            sleep(Duration::from_secs(CONFIG.train_interval_secs)).await;
+            sleep(Duration::from_secs(CONFIG().train_interval_secs)).await;
 
             let buffer = node.buffer.read().unwrap();
-            if buffer.len() < CONFIG.batch_size as usize {
+            if buffer.len() < CONFIG().batch_size as usize {
                 drop(buffer);
                 continue;
             }
 
-            if batch_counter > CONFIG.total_batches as u32 {
+            if batch_counter > CONFIG().total_batches as u32 {
                 drop(buffer);
-                info!("Training complete after {} batches.", CONFIG.total_batches);
+                info!("Training complete after {} batches.", CONFIG().total_batches);
                 break;
             }
             batch_counter += 1;
 
-            let batch = buffer.sample(CONFIG.batch_size as usize);
+            let batch = buffer.sample(CONFIG().batch_size as usize);
             drop(buffer);
 
             let model = node.model.write().unwrap();

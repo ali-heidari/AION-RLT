@@ -1,9 +1,9 @@
-use super::configurations::CONFIG;
+use crate::get_config as CONFIG;
 use anyhow::Ok;
 use log::warn;
 use ndarray::{Array1, Array2, Axis};
-use ndarray_rand::RandomExt;
 use ndarray_rand::rand::distributions::Uniform;
+use ndarray_rand::RandomExt;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write;
@@ -22,17 +22,17 @@ impl Model {
         let uniform = Uniform::new(-0.1, 0.1);
         Self {
             w1: Array2::random_using(
-                (CONFIG.input_number, CONFIG.hidden_layers),
+                (CONFIG().input_number, CONFIG().hidden_layers),
                 uniform,
                 &mut rng,
             ),
-            b1: Array1::zeros(CONFIG.hidden_layers),
+            b1: Array1::zeros(CONFIG().hidden_layers),
             w2: Array2::random_using(
-                (CONFIG.hidden_layers, CONFIG.output_number),
+                (CONFIG().hidden_layers, CONFIG().output_number),
                 uniform,
                 &mut rng,
             ),
-            b2: Array1::zeros(CONFIG.output_number),
+            b2: Array1::zeros(CONFIG().output_number),
         }
     }
 
@@ -52,7 +52,7 @@ impl Model {
         let sum_per_row = exps.sum_axis(Axis(1)).insert_axis(Axis(1));
         &exps / &sum_per_row
     }
-    
+
     pub fn softmax(logits: &Array2<f32>, temperature: f32) -> Vec<f32> {
         // temperature > 0.0
         let inv_temp = 1.0 / temperature;
@@ -114,13 +114,13 @@ impl Model {
 
     pub fn save_model(&self) -> anyhow::Result<()> {
         let json = serde_json::to_string(self)?;
-        let mut file = File::create(CONFIG.model_name.as_str())?;
+        let mut file = File::create(CONFIG().model_name.as_str())?;
         file.write_all(json.as_bytes())?;
         Ok(())
     }
 
     pub fn load_model(&self) -> anyhow::Result<Model> {
-        let data = std::fs::read_to_string(CONFIG.model_name.as_str())?.replace("null", "0.0");
+        let data = std::fs::read_to_string(CONFIG().model_name.as_str())?.replace("null", "0.0");
         let model = match serde_json::from_str(&data) {
             std::result::Result::Ok(m) => m,
             Err(_) => Model::new(),

@@ -4,7 +4,7 @@ use tokio::time::sleep;
 
 use crate::{
     configurations::CONFIG, experience::Experience, infer_action::infer_action, model::Model,
-    reply_buffer::ReplayBuffer, reward::compute_reward_with_success, worker::Worker,
+    reply_buffer::ReplayBuffer, worker::Worker,
 };
 use std::{
     collections::HashMap,
@@ -67,9 +67,10 @@ impl Node {
         }
     }
 
-    pub async fn start<F>(input_bearer: F, mode: RunningMode)
+    pub async fn start<F, H>(input_bearer: F, mode: RunningMode, compute_reward_with_success: H)
     where
         F: Fn(u32) -> Vec<f32>,
+        H: Fn(&Vec<f32>, u32) -> (f32, bool),
     {
         let node = Arc::new(Node::new(0.05, 0.5));
         if let RunningMode::Training = mode {
@@ -78,7 +79,7 @@ impl Node {
 
         let mut math = Math::new();
         loop {
-            let mut inputs = vec![];
+            let inputs;
             {
                 let action_detail_guard = node.action_details.read().unwrap();
                 let total_avg: f32 =
@@ -91,7 +92,7 @@ impl Node {
                     .0;
                 inputs = input_bearer(lowest_state as u32);
             }
-            node.next(inputs, &mut math);
+            node.next(inputs, &mut math, &compute_reward_with_success);
             sleep(Duration::from_millis(10)).await;
 
             if *node.counter.read().unwrap()
@@ -111,7 +112,7 @@ impl Node {
 
     pub fn set_loss(&self, batch_number: u32, loss: f32) {
         {
-            if (batch_number % 20 == 0) {
+            if batch_number % 20 == 0 {
                 self.adjust_factors(*self.loss.read().unwrap() > loss);
             }
 
@@ -299,9 +300,12 @@ impl Node {
         adjusted_reward.clamp(-1.0, 1.0)
     }
 
-    pub fn next(&self, inputs: Vec<f32>, math: &mut Math) {
+    pub fn next<F>(&self, inputs: Vec<f32>, math: &mut Math, compute_reward_with_success: F)
+    where
+        F: Fn(&Vec<f32>, u32) -> (f32, bool),
+    {
         let (action, logits, probs) = infer_action(self, &inputs);
-        let (reward, success) = compute_reward_with_success(&inputs, action as u8);
+        let (reward, success) = compute_reward_with_success(&inputs, action as u32);
 
         let adjusted_reward = if *self.enable_adjustment.read().unwrap() {
             reward //  self.adjust_settings(action, reward, success)

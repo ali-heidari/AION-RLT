@@ -104,12 +104,16 @@ impl Node {
 
     pub fn start_training(node: Arc<Node>) {
         *node.enable_adjustment.write().unwrap() = true;
+        *node.epsilon.write().unwrap() = 0.5;
+        *node.temperature.write().unwrap() = 3.0;
         Worker::start(node);
     }
 
     pub fn set_loss(&self, batch_number: u32, loss: f32) {
         {
-            self.adjust_factors(*self.loss.read().unwrap() > loss);
+            if (batch_number % 20 == 0) {
+                self.adjust_factors(*self.loss.read().unwrap() > loss);
+            }
 
             *self.loss.write().unwrap() = loss;
             self.batch_history
@@ -285,10 +289,13 @@ impl Node {
 
         let avg_ratio: f32 = 1.0 / action_ratios.len() as f32;
         let adjusted_reward = if success {
-            reward * (1.0 + 0.5 * (avg_ratio - &action_ratios[action]))
+            let reward_temp = reward + 0.2 * success_rates.get(action).unwrap();
+            reward_temp * (1.0 + 0.5 * (avg_ratio - action_ratios[action]))
         } else {
-            reward * (1.0 - 0.25 * (avg_ratio - action_ratios[action]).abs())
+            let reward_temp = reward + 1.2 * success_rates.get(action).unwrap();
+            reward_temp * (1.0 - 0.25 * (avg_ratio - action_ratios[action]).abs())
         };
+
         adjusted_reward.clamp(-1.0, 1.0)
     }
 
@@ -297,7 +304,7 @@ impl Node {
         let (reward, success) = compute_reward_with_success(&inputs, action as u8);
 
         let adjusted_reward = if *self.enable_adjustment.read().unwrap() {
-            self.adjust_settings(action, reward, success)
+            reward //  self.adjust_settings(action, reward, success)
         } else {
             reward
         };

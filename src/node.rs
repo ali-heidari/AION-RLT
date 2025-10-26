@@ -51,6 +51,7 @@ pub struct Node {
     pub action_details: RwLock<HashMap<u32, ActionDetails>>,
     enable_adjustment: RwLock<bool>,
     counter: RwLock<u64>,
+    diverging: RwLock<bool>,
 }
 
 impl Node {
@@ -65,6 +66,7 @@ impl Node {
             action_details: RwLock::new(HashMap::new()),
             enable_adjustment: RwLock::new(false),
             counter: RwLock::new(0),
+            diverging: RwLock::new(false),
         }
     }
 
@@ -85,20 +87,24 @@ impl Node {
                 let action_detail_guard = node.action_details.read().unwrap();
                 let total_avg: f32 =
                     *node.counter.read().unwrap() as f32 / action_detail_guard.len() as f32 * 0.7;
-                let lowest_state = action_detail_guard
-                    .iter()
-                    .map(|x| (*x.0, x.1.total as f32 - total_avg))
-                    .min_by(|x, y| (x.1).partial_cmp(&y.1).unwrap())
-                    .unwrap_or((u32::MAX, 0.0))
-                    .0;
+
+                let lowest_state = if *node.diverging.read().unwrap() {
+                    action_detail_guard
+                        .iter()
+                        .map(|x| (*x.0, x.1.total as f32 - total_avg))
+                        .min_by(|x, y| (x.1).partial_cmp(&y.1).unwrap())
+                        .unwrap_or((u32::MAX, 0.0))
+                        .0
+                } else {
+                    u32::MAX
+                };
                 inputs = input_bearer(lowest_state as u32);
             }
             node.next(inputs, &mut math, &compute_reward_with_success);
-            sleep(Duration::from_millis(10)).await;
 
-            if *node.counter.read().unwrap()
-                > (CONFIG().total_batches as u64 * CONFIG().batch_size as u64)
-            {
+            sleep(Duration::from_millis(5)).await;
+
+            if node.batch_history.read().unwrap().len() > CONFIG().total_batches {
                 break;
             }
         }
@@ -113,8 +119,8 @@ impl Node {
 
     pub fn set_loss(&self, batch_number: u32, loss: f32) {
         {
-            if batch_number % 20 == 0 {
-                self.adjust_factors(*self.loss.read().unwrap() > loss);
+            if batch_number % 2 == 0 {
+                self.adjust_factors(!*self.diverging.read().unwrap() || self.batch_history.read().unwrap().len() > 300);
             }
 
             *self.loss.write().unwrap() = loss;
@@ -169,8 +175,12 @@ impl Node {
         info!("logits: {:?}", logits);
         info!("probs: {:?}", probs);
         info!(
-            "Action taken: {}, Reward: {:.3}, adjusted_Reward: {:.3}, Success: {}",
-            action, reward, adjusted_reward, success
+            "Action taken: {}, Reward: {:.3}, adjusted_Reward: {:.3}, Success: {}. Diverging: {}",
+            action,
+            reward,
+            adjusted_reward,
+            success,
+            self.diverging.read().unwrap()
         );
 
         let loss_avg = math.calc_avg_and_trend(*self.loss.read().unwrap(), 0.05);
@@ -204,7 +214,7 @@ impl Node {
             info!(
                 "[variance] Total: {:.3}, Success Rate: {:.3}, logits: {:.3}, probs: {:.3},",
                 Math::variance_of_ratios(totals.iter().map(|x| *x as f32).collect()),
-                Math::variance_of_ratios(success_rates),
+                Math::variance(success_rates),
                 Math::variance(logits.to_vec()),
                 Math::variance(probs.to_vec())
             );
@@ -252,9 +262,9 @@ impl Node {
     fn adjust_epsilon(&self, push_down: bool) {
         let mut epsilon = *self.epsilon.read().unwrap();
         if push_down {
-            epsilon = (epsilon * 0.995).max(0.05);
+            epsilon = (epsilon * 0.9).max(0.05);
         } else {
-            epsilon = (epsilon + 0.01).min(0.5);
+            epsilon = (epsilon + 0.9).min(0.5);
         }
         *self.epsilon.write().unwrap() = epsilon;
     }
@@ -262,9 +272,9 @@ impl Node {
     fn adjust_temperature(&self, push_down: bool) {
         let mut temperature = *self.temperature.read().unwrap();
         if push_down {
-            temperature = (temperature * 0.995).max(0.5);
+            temperature = (temperature * 0.9).max(0.5);
         } else {
-            temperature = (temperature + 0.01).min(5.0);
+            temperature = (temperature + 0.9).min(5.0);
         }
         *self.temperature.write().unwrap() = temperature;
     }
@@ -285,17 +295,25 @@ impl Node {
         let success_rates = self.get_success_rates();
         let variance_success_rates = Math::variance(success_rates.clone());
 
-        if variance_action_ratios <= 0.01 && variance_success_rates <= 0.01 {
+        *self.diverging.write().unwrap() =
+            (variance_action_ratios + variance_success_rates) / 2.0 > 0.01;
+
+        if variance_action_ratios <= 0.01
+            && variance_success_rates <= 0.01
+            && self.batch_history.read().unwrap().len() < 300
+        {
             return reward;
         }
 
         let avg_ratio: f32 = 1.0 / action_ratios.len() as f32;
+        let diff = avg_ratio - action_ratios[action];
+
         let adjusted_reward = if success {
-            let reward_temp = reward + 0.2 * success_rates.get(action).unwrap();
-            reward_temp * (1.0 + 0.5 * (avg_ratio - action_ratios[action]))
+            // Encourage rare and successful actions
+            reward * (1.0 + 0.3 * diff + 0.2 * (1.0 - success_rates[action]))
         } else {
-            let reward_temp = reward + 1.2 * success_rates.get(action).unwrap();
-            reward_temp * (1.0 - 0.25 * (avg_ratio - action_ratios[action]).abs())
+            // Penalize frequent or failed actions
+            reward * (1.0 - 0.3 * diff.abs() - 0.2 * (1.0 - success_rates[action]))
         };
 
         adjusted_reward.clamp(-1.0, 1.0)
@@ -309,7 +327,7 @@ impl Node {
         let (reward, success) = compute_reward_with_success(&inputs, action as u32);
 
         let adjusted_reward = if *self.enable_adjustment.read().unwrap() {
-            reward //  self.adjust_settings(action, reward, success)
+            self.adjust_settings(action, reward, success)
         } else {
             reward
         };

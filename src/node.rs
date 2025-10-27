@@ -52,6 +52,9 @@ pub struct Node {
     enable_adjustment: RwLock<bool>,
     counter: RwLock<u64>,
     diverging: RwLock<bool>,
+    stuck: RwLock<bool>,
+    success_rate_mean: RwLock<f32>,
+    batch_sampled: RwLock<bool>,
 }
 
 impl Node {
@@ -67,6 +70,9 @@ impl Node {
             enable_adjustment: RwLock::new(false),
             counter: RwLock::new(0),
             diverging: RwLock::new(false),
+            stuck: RwLock::new(false),
+            success_rate_mean: RwLock::new(temperature),
+            batch_sampled: RwLock::new(false),
         }
     }
 
@@ -86,12 +92,23 @@ impl Node {
             {
                 let action_detail_guard = node.action_details.read().unwrap();
                 let total_avg: f32 =
-                    *node.counter.read().unwrap() as f32 / action_detail_guard.len() as f32 * 0.7;
+                    *node.counter.read().unwrap() as f32 / action_detail_guard.len() as f32;
+                let success_rate_avg: f32 =
+                    node.get_success_rates().iter().sum::<f32>() / action_detail_guard.len() as f32;
 
                 let lowest_state = if *node.diverging.read().unwrap() {
                     action_detail_guard
                         .iter()
-                        .map(|x| (*x.0, x.1.total as f32 - total_avg))
+                        .map(|x| {
+                            (
+                                *x.0,
+                                if (x.1.get_success_rate() - success_rate_avg).abs() > 0.2 {
+                                    1.0 + (x.1.get_success_rate() - success_rate_avg).abs()
+                                } else {
+                                    x.1.total as f32 - total_avg
+                                },
+                            )
+                        })
                         .min_by(|x, y| (x.1).partial_cmp(&y.1).unwrap())
                         .unwrap_or((u32::MAX, 0.0))
                         .0
@@ -102,7 +119,7 @@ impl Node {
             }
             node.next(inputs, &mut math, &compute_reward_with_success);
 
-            sleep(Duration::from_millis(5)).await;
+            sleep(Duration::from_millis(10)).await;
 
             if node.batch_history.read().unwrap().len() > CONFIG().total_batches {
                 break;
@@ -112,15 +129,17 @@ impl Node {
 
     pub fn start_training(node: Arc<Node>) {
         *node.enable_adjustment.write().unwrap() = true;
-        *node.epsilon.write().unwrap() = 0.5;
-        *node.temperature.write().unwrap() = 3.0;
+        *node.epsilon.write().unwrap() = 0.05;
+        *node.temperature.write().unwrap() = 0.5;
         Worker::start(node);
     }
 
     pub fn set_loss(&self, batch_number: u32, loss: f32) {
         {
-            if batch_number % 2 == 0 {
-                self.adjust_factors(!*self.diverging.read().unwrap() || self.batch_history.read().unwrap().len() > 300);
+            if batch_number > 300 {
+                self.adjust_factors(
+                    !(*self.diverging.read().unwrap() || *self.stuck.read().unwrap()),
+                );
             }
 
             *self.loss.write().unwrap() = loss;
@@ -128,6 +147,8 @@ impl Node {
                 .write()
                 .unwrap()
                 .insert(batch_number, loss);
+
+            *self.batch_sampled.write().unwrap() = true;
         }
     }
 
@@ -175,12 +196,13 @@ impl Node {
         info!("logits: {:?}", logits);
         info!("probs: {:?}", probs);
         info!(
-            "Action taken: {}, Reward: {:.3}, adjusted_Reward: {:.3}, Success: {}. Diverging: {}",
+            "Action taken: {}, Reward: {:.3}, adjusted_Reward: {:.3}, Success: {}. Diverging: {}, Stuck: {}",
             action,
             reward,
             adjusted_reward,
             success,
-            self.diverging.read().unwrap()
+            self.diverging.read().unwrap(),
+            self.stuck.read().unwrap()
         );
 
         let loss_avg = math.calc_avg_and_trend(*self.loss.read().unwrap(), 0.05);
@@ -297,7 +319,15 @@ impl Node {
 
         *self.diverging.write().unwrap() =
             (variance_action_ratios + variance_success_rates) / 2.0 > 0.01;
-
+        // let mean: f32 = success_rates.iter().sum::<f32>() / success_rates.len() as f32;
+        // let stuck = (*self.success_rate_mean.read().unwrap() - mean).abs() < 0.01 && mean < 0.5;
+        // *self.success_rate_mean.write().unwrap() = mean;
+        // if stuck == true
+        //     && self.batch_history.read().unwrap().len() % 50 == 0
+        //     && *self.stuck.read().unwrap() == stuck
+        // {
+        //     *self.stuck.write().unwrap() = stuck;
+        // }
         if variance_action_ratios <= 0.01
             && variance_success_rates <= 0.01
             && self.batch_history.read().unwrap().len() < 300
@@ -327,6 +357,9 @@ impl Node {
         let (reward, success) = compute_reward_with_success(&inputs, action as u32);
 
         let adjusted_reward = if *self.enable_adjustment.read().unwrap() {
+            // if Math::variance(logits.clone().into_raw_vec_and_offset().0.try_into().unwrap()) > 8.0 {
+            //     *self.diverging.write().unwrap() = true;
+            // }
             self.adjust_settings(action, reward, success)
         } else {
             reward
@@ -352,7 +385,8 @@ impl Node {
 
         *self.counter.write().unwrap() += 1;
 
-        if *self.counter.read().unwrap() % CONFIG().log_interval == 0 {
+        // if *self.counter.read().unwrap() % CONFIG().log_interval == 0 {
+        if *self.batch_sampled.read().unwrap() {
             self.report(
                 inputs.as_slice().try_into().unwrap(),
                 logits.into_raw_vec_and_offset().0.try_into().unwrap(),
@@ -363,6 +397,7 @@ impl Node {
                 math,
                 adjusted_reward,
             );
+            *self.batch_sampled.write().unwrap() = false;
         }
     }
 }

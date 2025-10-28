@@ -1,3 +1,4 @@
+
 use crate::get_config as CONFIG;
 use aion_math::math::Math;
 use aion_math::continuous_math::ContinuousMath;

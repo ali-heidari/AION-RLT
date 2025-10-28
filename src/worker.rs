@@ -18,7 +18,7 @@ impl Worker {
     pub fn new(id: u32) -> Self {
         Self {
             id: id,
-            learning_rate: 0.00001,
+            learning_rate: 0.000001,
         }
     }
 

@@ -89,23 +89,11 @@ impl Model {
         let logits = h.dot(&self.w2) + &self.b2;
         let probs = Self::softmax2(&logits, 1.0);
 
-        // ---- ✨ Entropy Regularization ----
-        // Small constant to avoid log(0)
-        let eps = 1e-8;
-        let entropy: f32 = (-&probs * (&probs + eps).mapv(f32::ln)).sum() / probs.len() as f32;
-
-        let entropy_coeff = 0.01; // tune between 0.005 - 0.05
-
-        // ---- Policy Gradient ----
         let mut grad_logits = Array2::<f32>::zeros(probs.raw_dim());
         for (i, &a) in actions.iter().enumerate() {
             grad_logits[[i, a]] = -rewards[i] * (1.0 - probs[[i, a]]);
         }
 
-        // ---- Entropy Gradient (encourages exploration) ----
-        let entropy_grad = &probs.mapv(|p| p.ln() + 1.0); // ∂H/∂logits approximation
-        let grad_logits = &grad_logits - &entropy_grad.mapv(|v| entropy_coeff * v);
-        // ---- Backprop ----
         let grad_w2 = h.t().dot(&grad_logits);
         let grad_b2 = grad_logits.sum_axis(Axis(0));
         let grad_h = grad_logits.dot(&self.w2.t());
@@ -113,7 +101,6 @@ impl Model {
         let grad_w1 = x.t().dot(&grad_h_relu);
         let grad_b1 = grad_h_relu.sum_axis(Axis(0));
 
-        // ---- Update ----
         self.w1 -= &(lr * grad_w1);
         self.b1 -= &(lr * grad_b1);
         self.w2 -= &(lr * grad_w2);
@@ -122,9 +109,7 @@ impl Model {
         if self.w1.iter().any(|x| x.is_nan()) {
             warn!("NaN detected in weights!");
         }
-
-        // Return average reward + entropy (for logging)
-        rewards.mean().unwrap_or(0.0) + entropy_coeff * entropy
+        rewards.mean().unwrap_or(0.0)
     }
 
     pub fn save_model(&self) -> anyhow::Result<()> {

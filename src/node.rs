@@ -1,5 +1,6 @@
 use crate::get_config as CONFIG;
 use aion_math::math::Math;
+use aion_math::continuous_math::ContinuousMath;
 use log::info;
 use tokio::time::sleep;
 
@@ -86,27 +87,30 @@ impl Node {
             Node::start_training(node.clone());
         }
 
-        let mut math = Math::new();
+        let mut math = ContinuousMath::new();
         loop {
             let inputs;
             {
                 let action_detail_guard = node.action_details.read().unwrap();
-                let total_avg: f32 =
-                    *node.counter.read().unwrap() as f32 / action_detail_guard.len() as f32;
+                let total_avg: f32 = 1.0 / action_detail_guard.len() as f32;
                 let success_rate_avg: f32 =
                     node.get_success_rates().iter().sum::<f32>() / action_detail_guard.len() as f32;
 
-                let lowest_state = if *node.diverging.read().unwrap() {
+                let lowest_state = if
+                //node.batch_history.read().iter().len() > 300
+                *node.diverging.read().unwrap() {
+                    // u32::MAX
                     action_detail_guard
                         .iter()
                         .map(|x| {
                             (
                                 *x.0,
-                                if (x.1.get_success_rate() - success_rate_avg).abs() > 0.2 {
-                                    1.0 + (x.1.get_success_rate() - success_rate_avg).abs()
-                                } else {
-                                    x.1.total as f32 - total_avg
-                                },
+                                // if x.1.get_success_rate() - success_rate_avg < 0.0 {
+                                //     x.1.get_success_rate() - success_rate_avg
+                                // } else {
+                                    x.1.total as f32 / *node.counter.read().unwrap() as f32
+                                        - total_avg
+                                // },
                             )
                         })
                         .min_by(|x, y| (x.1).partial_cmp(&y.1).unwrap())
@@ -129,14 +133,14 @@ impl Node {
 
     pub fn start_training(node: Arc<Node>) {
         *node.enable_adjustment.write().unwrap() = true;
-        *node.epsilon.write().unwrap() = 0.05;
-        *node.temperature.write().unwrap() = 0.5;
+        *node.epsilon.write().unwrap() = 0.5;
+        *node.temperature.write().unwrap() = 3.0;
         Worker::start(node);
     }
 
     pub fn set_loss(&self, batch_number: u32, loss: f32) {
         {
-            if batch_number > 300 {
+            if batch_number > 0 {
                 self.adjust_factors(
                     !(*self.diverging.read().unwrap() || *self.stuck.read().unwrap()),
                 );
@@ -185,7 +189,7 @@ impl Node {
         action: usize,
         reward: f32,
         success: bool,
-        math: &mut Math,
+        math: &mut ContinuousMath,
         adjusted_reward: f32,
     ) {
         // TODO: Change the log using struct that provides inputs as vectors and custom log
@@ -205,7 +209,7 @@ impl Node {
             self.stuck.read().unwrap()
         );
 
-        let loss_avg = math.calc_avg_and_trend(*self.loss.read().unwrap(), 0.05);
+        let loss_avg = math.calc_avg_and_trend(1,*self.loss.read().unwrap(), 0.005);
         info!(
             "epsilon: {:.3}, temperature: {:.3}, loss: {:.3}, loss_avg: {:.3}, loss_trend: {:.3}, batch: #{}",
             self.epsilon.read().unwrap(),
@@ -219,24 +223,39 @@ impl Node {
         if action_details_guard.len() > 2 {
             let success_rates = self.get_success_rates();
             let totals = self.get_action_total();
+            let totals_ratios = self.get_action_ratios();
             info!(
                 "Total action: [High pressure] {}\t[Normal] {}\t[Low pressure] {}",
                 totals[0], totals[1], totals[2]
+            );
+            info!(
+                "Total ratios: [High pressure] {:.2}\t[Normal] {:.2}\t[Low pressure] {:.2}",
+                totals_ratios[0], totals_ratios[1], totals_ratios[2]
             );
             info!(
                 "Success Rate: [High pressure] {:.2}\t[Normal] {:.2}\t[Low pressure] {:.2}",
                 success_rates[0], success_rates[1], success_rates[2]
             );
             info!(
-                "Reward average: [High pressure] {:.2}\t[Normal] {:.2}\t[Low pressure] {:.2}",
+                "Averages: [Total] {:.2}\t[Total ratio] {:.2}\t[Success rates] {:.2}",
+                totals.iter().sum::<u32>() as f32 / totals.len() as f32,
+                totals_ratios.iter().sum::<f32>() / totals_ratios.len() as f32,
+                success_rates.iter().sum::<f32>() / success_rates.len() as f32
+            );
+            let reward_averages = vec![
                 action_details_guard.get(&0).unwrap().reward / totals[0] as f32,
                 action_details_guard.get(&1).unwrap().reward / totals[1] as f32,
-                action_details_guard.get(&2).unwrap().reward / totals[2] as f32
+                action_details_guard.get(&2).unwrap().reward / totals[2] as f32,
+            ];
+            info!(
+                "Reward average: [High pressure] {:.2}\t[Normal] {:.2}\t[Low pressure] {:.2}",
+                reward_averages[0], reward_averages[1], reward_averages[2]
             );
             info!(
-                "[variance] Total: {:.3}, Success Rate: {:.3}, logits: {:.3}, probs: {:.3},",
+                "[variance] Total: {:.3}, Success Rate: {:.3}, Reward averages: {:.3}, logits: {:.3}, probs: {:.3},",
                 Math::variance_of_ratios(totals.iter().map(|x| *x as f32).collect()),
                 Math::variance(success_rates),
+                Math::variance_of_ratios(reward_averages),
                 Math::variance(logits.to_vec()),
                 Math::variance(probs.to_vec())
             );
@@ -284,9 +303,9 @@ impl Node {
     fn adjust_epsilon(&self, push_down: bool) {
         let mut epsilon = *self.epsilon.read().unwrap();
         if push_down {
-            epsilon = (epsilon * 0.9).max(0.05);
+            epsilon = (epsilon * 0.99).max(0.01);
         } else {
-            epsilon = (epsilon + 0.9).min(0.5);
+            epsilon = (epsilon + 0.99).min(0.5);
         }
         *self.epsilon.write().unwrap() = epsilon;
     }
@@ -294,9 +313,9 @@ impl Node {
     fn adjust_temperature(&self, push_down: bool) {
         let mut temperature = *self.temperature.read().unwrap();
         if push_down {
-            temperature = (temperature * 0.9).max(0.5);
+            temperature = (temperature * 0.99).max(0.5);
         } else {
-            temperature = (temperature + 0.9).min(5.0);
+            temperature = (temperature + 0.99).min(5.0);
         }
         *self.temperature.write().unwrap() = temperature;
     }
@@ -340,16 +359,16 @@ impl Node {
 
         let adjusted_reward = if success {
             // Encourage rare and successful actions
-            reward * (1.0 + 0.3 * diff + 0.2 * (1.0 - success_rates[action]))
+            reward * (1.0 + 0.3 * diff + 0.4 * (1.0 - success_rates[action]))
         } else {
             // Penalize frequent or failed actions
-            reward * (1.0 - 0.3 * diff.abs() - 0.2 * (1.0 - success_rates[action]))
+            reward * (1.0 - 0.3 * diff.abs() - 0.4 * (1.0 - success_rates[action]))
         };
 
         adjusted_reward.clamp(-1.0, 1.0)
     }
 
-    pub fn next<F>(&self, inputs: Vec<f32>, math: &mut Math, compute_reward_with_success: F)
+    pub fn next<F>(&self, inputs: Vec<f32>, math: &mut ContinuousMath, compute_reward_with_success: F)
     where
         F: Fn(&Vec<f32>, u32) -> (f32, bool),
     {
@@ -360,6 +379,7 @@ impl Node {
             // if Math::variance(logits.clone().into_raw_vec_and_offset().0.try_into().unwrap()) > 8.0 {
             //     *self.diverging.write().unwrap() = true;
             // }
+            // reward
             self.adjust_settings(action, reward, success)
         } else {
             reward

@@ -292,7 +292,7 @@ impl Node {
             let text = footstep.print();
 
             self.model.write().unwrap().sanitize();
-            self.model.write().unwrap().snapshot.push_str(&text);
+            self.model.write().unwrap().snapshot = text;
             self.model.read().unwrap().save_model().ok();
         }
     }
@@ -357,9 +357,13 @@ impl Node {
     fn adjust_lr(&self, push_down: bool) {
         let mut lr = *self.lr.read().unwrap();
         if push_down {
-            lr = (lr * 0.99).max(0.000001);
+            lr = (lr * 0.99).max(if *self.stuck.read().unwrap() {
+                0.00001
+            } else {
+                0.000001
+            });
         } else {
-            lr = (lr + 0.99).min(0.001);
+            lr = (lr + 0.99).min(0.0001);
         }
         *self.lr.write().unwrap() = lr;
     }

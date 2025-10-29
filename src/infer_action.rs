@@ -2,7 +2,7 @@ use crate::get_config as CONFIG;
 use crate::model::Model;
 
 use super::node::Node;
-use ndarray::Array2;
+use ndarray::{Array, Array2, ArrayBase};
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::Rng;
 
@@ -12,6 +12,14 @@ pub fn infer_action(node: &Node, features: &Vec<f32>) -> (usize, Array2<f32>, Ve
     let x = Array2::from_shape_vec((1, CONFIG().input_number), features.clone()).unwrap();
     let model = node.model.read().unwrap();
     let logits = model.forward(&x);
+    let num_actions = logits.len();
+
+    let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let logits = logits
+        .into_iter()
+        .map(|x| (x - max_logit).clamp(-50.0, 50.0))
+        .collect();
+    let logits = Array::from_shape_vec((1,num_actions), logits).unwrap();
 
     let temperature = node.temperature.write().unwrap().clone();
     let mut probs = Model::softmax(&logits, temperature);

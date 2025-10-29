@@ -140,10 +140,8 @@ impl Node {
 
     pub fn set_loss(&self, batch_number: u32, loss: f32) {
         {
-            if batch_number > 0 {
-                self.adjust_factors(
-                    !(*self.diverging.read().unwrap() || *self.stuck.read().unwrap()),
-                );
+            if batch_number > 50 {
+                self.adjust_factors(!*self.diverging.read().unwrap());
             }
 
             *self.loss.write().unwrap() = loss;
@@ -341,7 +339,7 @@ impl Node {
         if push_down {
             epsilon = (epsilon * 0.99).max(0.01);
         } else {
-            epsilon = (epsilon + 0.99).min(0.5);
+            epsilon = (epsilon + 0.99).min(0.7);
         }
         *self.epsilon.write().unwrap() = epsilon;
     }
@@ -351,7 +349,7 @@ impl Node {
         if push_down {
             temperature = (temperature * 0.99).max(0.5);
         } else {
-            temperature = (temperature + 0.99).min(5.0);
+            temperature = (temperature + 0.99).min(7.0);
         }
         *self.temperature.write().unwrap() = temperature;
     }
@@ -361,7 +359,7 @@ impl Node {
         if push_down {
             lr = (lr * 0.99).max(0.000001);
         } else {
-            lr = (lr + 0.99).min(0.0001);
+            lr = (lr + 0.99).min(0.001);
         }
         *self.lr.write().unwrap() = lr;
     }
@@ -369,7 +367,7 @@ impl Node {
     fn adjust_factors(&self, down_trend: bool) {
         self.adjust_epsilon(down_trend);
         self.adjust_temperature(down_trend);
-        self.adjust_lr(down_trend);
+        // self.adjust_lr(down_trend);
     }
 
     fn detect_stuck(&self, success_rates: &Vec<f32>) {
@@ -398,8 +396,9 @@ impl Node {
         *self.diverging.write().unwrap() =
             (variance_action_ratios + variance_success_rates) / 2.0 > 0.01;
 
-        if *self.counter.read().unwrap() % 5 == 0 {
+        if self.batch_history.read().unwrap().len() % 5 == 0 {
             self.detect_stuck(&success_rates);
+            self.adjust_lr(!*self.stuck.read().unwrap() || *self.diverging.read().unwrap());
         }
 
         if variance_action_ratios <= 0.01

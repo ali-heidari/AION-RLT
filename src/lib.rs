@@ -9,7 +9,7 @@ mod model;
 pub mod node;
 mod reply_buffer;
 mod worker;
-// mod footstep;
+mod footstep;
 
 pub static CONFIG: OnceLock<Arc<Configurations>> = OnceLock::new();
 

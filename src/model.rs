@@ -14,6 +14,7 @@ pub struct Model {
     b1: Array1<f32>,
     w2: Array2<f32>,
     b2: Array1<f32>,
+    pub snapshot: String,
 }
 
 impl Model {
@@ -33,6 +34,7 @@ impl Model {
                 &mut rng,
             ),
             b2: Array1::zeros(CONFIG().output_number),
+            snapshot: String::new(),
         }
     }
 

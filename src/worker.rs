@@ -18,7 +18,7 @@ impl Worker {
     pub fn new(id: u32) -> Self {
         Self {
             id: id,
-            learning_rate: 0.000001,
+            learning_rate: 0.00001,
         }
     }
 
@@ -42,28 +42,27 @@ impl Worker {
         //  let loss = model.backward(&x, &y, 0.01);
         let loss = model.reinforce(&inputs, &predicted_action, &rewards, self.learning_rate);
 
-        model.sanitize();
-        model.save_model()?;
 
         Ok(loss)
     }
 
     pub fn start(node: Arc<Node>) {
         tokio::spawn(async move {
-            let worker = Worker::new(1);
+            let mut worker = Worker::new(1);
             if let Err(e) = worker.start_to_work(node).await {
                 warn!("training worker error: {:?}", e);
             }
         });
     }
 
-    async fn start_to_work(&self, node: Arc<Node>) -> Result<()> {
+    async fn start_to_work(&mut self, node: Arc<Node>) -> Result<()> {
         info!("Worker {} is working!", self.id);
 
         let mut batch_counter = 0;
 
         loop {
             sleep(Duration::from_secs(CONFIG().train_interval_secs)).await;
+            self.learning_rate = *node.lr.read().unwrap();
 
             let buffer = node.buffer.read().unwrap();
             if buffer.len() < CONFIG().batch_size as usize {
@@ -73,7 +72,10 @@ impl Worker {
 
             if batch_counter > CONFIG().total_batches as u32 {
                 drop(buffer);
-                info!("Training complete after {} batches.", CONFIG().total_batches);
+                info!(
+                    "Training complete after {} batches.",
+                    CONFIG().total_batches
+                );
                 break;
             }
             batch_counter += 1;

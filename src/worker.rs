@@ -42,7 +42,6 @@ impl Worker {
         //  let loss = model.backward(&x, &y, 0.01);
         let loss = model.reinforce(&inputs, &predicted_action, &rewards, self.learning_rate);
 
-
         Ok(loss)
     }
 
@@ -53,6 +52,29 @@ impl Worker {
                 warn!("training worker error: {:?}", e);
             }
         });
+    }
+
+    pub fn do_once(&mut self, node: &Node) -> Result<()> {
+        self.learning_rate = *node.lr.read().unwrap();
+
+        let buffer = node.buffer.read().unwrap();
+        if buffer.len() < CONFIG().batch_size as usize {
+            drop(buffer);
+            println!("buffer drop");
+            return Ok(());
+        }
+
+        let batch = buffer.sample(CONFIG().batch_size as usize);
+        drop(buffer);
+
+        let model = node.model.write().unwrap();
+        let loss = self.train_on_batch(batch, model).unwrap();
+        let mut a = 0;
+        {
+            a = node.batch_history.read().unwrap().len();
+        }
+        node.set_loss(a as u32 + 1, loss);
+        Ok(())
     }
 
     async fn start_to_work(&mut self, node: Arc<Node>) -> Result<()> {

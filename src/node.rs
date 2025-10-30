@@ -1,8 +1,6 @@
 use crate::{footstep::Footstep, get_config as CONFIG};
 use aion_math::continuous_math::ContinuousMath;
 use aion_math::math::Math;
-use log::info;
-use tokio::time::sleep;
 
 use crate::{
     experience::Experience, infer_action::infer_action, model::Model, reply_buffer::ReplayBuffer,
@@ -85,8 +83,9 @@ impl Node {
         H: Fn(&Vec<f32>, u32) -> (f32, bool),
     {
         let node = Arc::new(Node::new(0.05, 0.5));
+        let mut worker = Worker::new(1);
         if let RunningMode::Training = mode {
-            Node::start_training(node.clone());
+            worker = Node::start_training(node.clone());
         }
 
         let mut math = ContinuousMath::new();
@@ -123,7 +122,13 @@ impl Node {
             }
             node.next(inputs, &mut math, &compute_reward_with_success);
 
-            sleep(Duration::from_millis(10)).await;
+            // sleep(Duration::from_millis(1)).await;
+
+            if *node.counter.read().unwrap() % CONFIG().batch_size as u64 == 0 {
+                if let RunningMode::Training = mode {
+                    worker.do_once(&node);
+                }
+            }
 
             if node.batch_history.read().unwrap().len() > CONFIG().total_batches {
                 break;
@@ -131,11 +136,12 @@ impl Node {
         }
     }
 
-    pub fn start_training(node: Arc<Node>) {
+    pub fn start_training(node: Arc<Node>) -> Worker {
         *node.enable_adjustment.write().unwrap() = true;
         *node.epsilon.write().unwrap() = 0.5;
         *node.temperature.write().unwrap() = 3.0;
-        Worker::start(node);
+        Worker::new(1)
+        // Worker::start(node);
     }
 
     pub fn set_loss(&self, batch_number: u32, loss: f32) {
@@ -400,7 +406,7 @@ impl Node {
         *self.diverging.write().unwrap() =
             (variance_action_ratios + variance_success_rates) / 2.0 > 0.01;
 
-        if self.batch_history.read().unwrap().len() % 5 == 0 {
+        if self.batch_history.read().unwrap().len() % 50 == 0 {
             self.detect_stuck(&success_rates);
             self.adjust_lr(!*self.stuck.read().unwrap() || *self.diverging.read().unwrap());
         }

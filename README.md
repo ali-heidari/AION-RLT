@@ -41,14 +41,22 @@ cargo build --release
 // Example pseudo-code (Rust-like)
 use aion_rlt::Trainer;
 
-fn main() {
-    let mut trainer = Trainer::new();
-    trainer.add_input("cpu_usage");
-    trainer.add_input("memory_usage");
-    trainer.add_output("action");
+#[tokio::main]
+async fn main() -> Result<()> {
+    env_logger::init();
+    let state = Arc::new(Mutex::new(SyntheticState::new()));
+    let cloned_state = Arc::clone(&state);
 
-    trainer.train(epochs = 1000);
-    trainer.save("model.aion");
+    aion_rlt::initialize(load_config().unwrap());
+
+    Node::start(
+        move |lowest_state| get_features(&mut cloned_state.lock().unwrap(), lowest_state),
+        |x, y| compute_reward_with_success(x, y as u8),
+        CONFIG.get().unwrap().mode,
+    )
+    .await;
+
+    Ok(())
 }
 ```
 
@@ -64,11 +72,12 @@ fn main() {
 
 ## Roadmap
 
-* [ ] Dynamic hyperparameter tuning
-* [ ] Improved sample efficiency for online learning
+* [x] Dynamic hyperparameter tuning
+* [x] Improved sample efficiency for online learning
 * [ ] CLI for model training and exporting
-* [ ] Integration with AION Metrics Collector
+* [x] Integration with AION Metrics Collector
 * [ ] Release first stable API
+* [ ] Define inputs
 
 ---
 

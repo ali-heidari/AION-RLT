@@ -69,11 +69,10 @@ impl Worker {
 
         let model = node.model.write().unwrap();
         let loss = self.train_on_batch(batch, model).unwrap();
-        let mut a = 0;
-        {
-            a = node.batch_history.read().unwrap().len();
-        }
-        node.set_loss(a as u32 + 1, loss);
+        let mut size = 0;
+        size = node.batch_history.read().unwrap().len();
+
+        node.set_loss(size as u32 + 1, loss);
         Ok(())
     }
 

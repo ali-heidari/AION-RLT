@@ -89,7 +89,7 @@ impl Node {
         H: Fn(&Vec<f32>, u32) -> (f32, bool),
     {
         let node = Arc::new(Node::new(0.05, 0.5, mode));
-        Node::set_default_factors(&node);
+        Node::set_default_factors(&node, node.mode);
         let mut worker = Worker::new(1);
         match node.mode {
             RunningMode::Training => {
@@ -150,10 +150,15 @@ impl Node {
         }
     }
 
-    pub fn set_default_factors(node: &Arc<Node>) {
+    pub fn set_default_factors(node: &Arc<Node>, mode: RunningMode) {
         *node.enable_adjustment.write().unwrap() = true;
-        *node.epsilon.write().unwrap() = 0.5;
-        *node.temperature.write().unwrap() = 3.0;
+        let settings = match mode {
+            RunningMode::Infer => (0.01, 0.5, 0.0000001),
+            _ => (0.5, 3.0, 0.00001),
+        };
+        *node.epsilon.write().unwrap() = settings.0;
+        *node.temperature.write().unwrap() = settings.1;
+        *node.lr.write().unwrap() = settings.2;
     }
 
     pub fn set_loss(&self, batch_number: u32, loss: f32) {

@@ -105,8 +105,7 @@ AION-RLT is released under the **Apache 2.0 License**.
 ## Related Projects / Ecosystem
 
 * **[AIONX Agent](https://github.com/AIONX/aionx-agent)** — AI-native node agent using AION-RLT
-* **[QUIC Transporter](https://github.com/yourusername/quic-transport)** — Fast networking layer
-* **[Falcon Metrics](https://github.com/yourusername/falcon-metrics)** — Metrics collector used by AIONX
+
 
 ---
 

@@ -1,6 +1,8 @@
 use crate::{footstep::Footstep, get_config as CONFIG};
 use aion_math::continuous_math::ContinuousMath;
 use aion_math::math::Math;
+use serde::{Deserialize, Serialize};
+use tokio::time::sleep;
 
 use crate::{
     experience::Experience, infer_action::infer_action, model::Model, reply_buffer::ReplayBuffer,
@@ -12,9 +14,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
 pub enum RunningMode {
     Infer,
     Training,
+    TrainingWithInterval,
 }
 
 pub struct ActionDetails {
@@ -55,10 +59,11 @@ pub struct Node {
     success_rate_mean: RwLock<f32>,
     batch_sampled: RwLock<bool>,
     pub lr: RwLock<f32>,
+    mode: RunningMode,
 }
 
 impl Node {
-    pub fn new(epsilon: f32, temperature: f32) -> Self {
+    pub fn new(epsilon: f32, temperature: f32, mode: RunningMode) -> Self {
         Self {
             model: Arc::new(RwLock::new(Model::new().load_model().unwrap())),
             buffer: Arc::new(RwLock::new(ReplayBuffer::new(CONFIG().reply_capacity))),
@@ -74,18 +79,26 @@ impl Node {
             success_rate_mean: RwLock::new(temperature),
             batch_sampled: RwLock::new(false),
             lr: RwLock::new(0.0001),
+            mode: mode,
         }
     }
 
-    pub async fn start<F, H>(input_bearer: F, mode: RunningMode, compute_reward_with_success: H)
+    pub async fn start<F, H>(input_bearer: F, compute_reward_with_success: H, mode: RunningMode)
     where
         F: Fn(u32) -> Vec<f32>,
         H: Fn(&Vec<f32>, u32) -> (f32, bool),
     {
-        let node = Arc::new(Node::new(0.05, 0.5));
+        let node = Arc::new(Node::new(0.05, 0.5, mode));
+        Node::set_default_factors(&node);
         let mut worker = Worker::new(1);
-        if let RunningMode::Training = mode {
-            worker = Node::start_training(node.clone());
+        match node.mode {
+            RunningMode::Training => {
+                worker = Worker::new(1);
+            }
+            RunningMode::TrainingWithInterval => {
+                Worker::start(node.clone());
+            }
+            RunningMode::Infer => {}
         }
 
         let mut math = ContinuousMath::new();
@@ -94,8 +107,6 @@ impl Node {
             {
                 let action_detail_guard = node.action_details.read().unwrap();
                 let total_avg: f32 = 1.0 / action_detail_guard.len() as f32;
-                let success_rate_avg: f32 =
-                    node.get_success_rates().iter().sum::<f32>() / action_detail_guard.len() as f32;
 
                 let lowest_state = if
                 //node.batch_history.read().iter().len() > 300
@@ -122,11 +133,14 @@ impl Node {
             }
             node.next(inputs, &mut math, &compute_reward_with_success);
 
-            // sleep(Duration::from_millis(1)).await;
+            if let RunningMode::Infer = node.mode {
+                *node.batch_sampled.write().unwrap() = true;
+                sleep(Duration::from_secs(CONFIG().interval_secs)).await;
+            }
 
             if *node.counter.read().unwrap() % CONFIG().batch_size as u64 == 0 {
-                if let RunningMode::Training = mode {
-                    worker.do_once(&node);
+                if let RunningMode::Training = node.mode {
+                    worker.do_once(&node).expect("Training failed!");
                 }
             }
 
@@ -136,12 +150,10 @@ impl Node {
         }
     }
 
-    pub fn start_training(node: Arc<Node>) -> Worker {
+    pub fn set_default_factors(node: &Arc<Node>) {
         *node.enable_adjustment.write().unwrap() = true;
         *node.epsilon.write().unwrap() = 0.5;
         *node.temperature.write().unwrap() = 3.0;
-        Worker::new(1)
-        // Worker::start(node);
     }
 
     pub fn set_loss(&self, batch_number: u32, loss: f32) {
@@ -297,9 +309,11 @@ impl Node {
 
             let text = footstep.print();
 
-            self.model.write().unwrap().sanitize();
-            self.model.write().unwrap().snapshot = text;
-            self.model.read().unwrap().save_model().ok();
+            if self.mode != RunningMode::Infer {
+                self.model.write().unwrap().sanitize();
+                self.model.write().unwrap().snapshot = text;
+                self.model.read().unwrap().save_model().ok();
+            }
         }
     }
 

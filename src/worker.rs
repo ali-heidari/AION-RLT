@@ -83,7 +83,7 @@ impl Worker {
         let mut batch_counter = 0;
 
         loop {
-            sleep(Duration::from_secs(CONFIG().train_interval_secs)).await;
+            sleep(Duration::from_secs(CONFIG().interval_secs)).await;
             self.learning_rate = *node.lr.read().unwrap();
 
             let buffer = node.buffer.read().unwrap();

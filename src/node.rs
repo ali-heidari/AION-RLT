@@ -10,7 +10,6 @@ use crate::{
 };
 use std::{
     collections::HashMap,
-    default,
     sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
@@ -38,11 +37,11 @@ impl ActionDetails {
         self.total += 1;
     }
     fn get_success_rate(&self) -> f32 {
-        return if self.total == 0 {
+        if self.total == 0 {
             0.0 // Avoid division by zero
         } else {
             self.success_count as f32 / self.total as f32
-        };
+        }
     }
 }
 
@@ -81,7 +80,7 @@ impl Node {
             success_rate_mean: RwLock::new(temperature),
             batch_sampled: RwLock::new(false),
             lr: RwLock::new(0.0001),
-            mode: mode,
+            mode,
         }
     }
 
@@ -135,11 +134,11 @@ impl Node {
                 } else {
                     u32::MAX
                 };
-                inputs = input_bearer(lowest_state as u32);
+                inputs = input_bearer(lowest_state);
             }
             node.next(inputs, &mut math, &compute_reward_with_success);
 
-            if *node.counter.read().unwrap() % CONFIG().batch_size as u64 == 0 {
+            if (*node.counter.read().unwrap()).is_multiple_of(CONFIG().batch_size as u64) {
                 if let RunningMode::Training = node.mode {
                     worker.do_once(&node).expect("Training failed!");
                 }
@@ -183,8 +182,8 @@ impl Node {
         let mut action_details_guard = self.action_details.write().unwrap();
         let action_details_temp = action_details_guard.get_mut(&predicted_action);
 
-        let action_details = if action_details_temp.is_some() {
-            action_details_temp.unwrap()
+        let action_details = if let Some(details) = action_details_temp {
+            details
         } else {
             action_details_guard.insert(
                 predicted_action,
@@ -206,7 +205,7 @@ impl Node {
 
     fn report(
         &self,
-        inputs: &[f32; 6],
+        inputs: &[f32; 7],
         logits: [f32; 3],
         probs: [f32; 3],
         action: usize,
@@ -216,16 +215,17 @@ impl Node {
         adjusted_reward: f32,
     ) {
         // TODO: Change the log using struct that provides inputs as vectors and custom log
-        let mut footstep = Footstep::new(2);
+        let mut footstep = Footstep::new(8);
 
         footstep.add_title("Inputs\t");
         footstep.add_values(vec![
-            ("CPU", inputs[0]),
-            ("MEM", inputs[1]),
-            ("SWAP", inputs[2]),
-            ("DISK", inputs[3]),
-            ("THROUGHPUT", inputs[4]),
-            ("LATENCY", inputs[5]),
+            ("0", inputs[0]),
+            ("1", inputs[1]),
+            ("2", inputs[2]),
+            ("3", inputs[3]),
+            ("4", inputs[4]),
+            ("5", inputs[5]),
+            ("6", inputs[6]),
         ]);
 
         footstep.add_title_with_value("Logits\t", &logits);
@@ -412,7 +412,7 @@ impl Node {
         // self.adjust_lr(down_trend);
     }
 
-    fn detect_stuck(&self, success_rates: &Vec<f32>) {
+    fn detect_stuck(&self, success_rates: &[f32]) {
         // stuck detection (simple): success_rate mean hasn't improved
         let mean_success: f32 =
             success_rates.iter().copied().sum::<f32>() / success_rates.len().max(1) as f32;
@@ -438,7 +438,7 @@ impl Node {
         *self.diverging.write().unwrap() =
             (variance_action_ratios + variance_success_rates) / 2.0 > 0.01;
 
-        if self.batch_history.read().unwrap().len() % 50 == 0 {
+        if self.batch_history.read().unwrap().len().is_multiple_of(50) {
             self.detect_stuck(&success_rates);
             self.adjust_lr(!*self.stuck.read().unwrap() || *self.diverging.read().unwrap());
         }
@@ -486,7 +486,7 @@ impl Node {
             action: action as u8,
             latency_ms: *inputs.get(5).unwrap(),
             reward: adjusted_reward,
-            success: success,
+            success,
             timestamp_ms: Instant::now().elapsed().as_millis(),
         };
         self.buffer.write().unwrap().push(ex);

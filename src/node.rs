@@ -114,7 +114,6 @@ impl Node {
                 let total_avg: f32 = 1.0 / action_detail_guard.len() as f32;
 
                 let lowest_state = if
-                //node.batch_history.read().iter().len() > 300
                 *node.diverging.read().unwrap() {
                     // u32::MAX
                     action_detail_guard
@@ -122,9 +121,6 @@ impl Node {
                         .map(|x| {
                             (
                                 *x.0,
-                                // if x.1.get_success_rate() - success_rate_avg < 0.0 {
-                                //     x.1.get_success_rate() - success_rate_avg
-                                // } else {
                                 x.1.total as f32 / *node.counter.read().unwrap() as f32 - total_avg, // },
                             )
                         })
@@ -205,7 +201,6 @@ impl Node {
 
     fn report(
         &self,
-        inputs: &[f32; 7],
         logits: [f32; 3],
         probs: [f32; 3],
         action: usize,
@@ -216,17 +211,6 @@ impl Node {
     ) {
         // TODO: Change the log using struct that provides inputs as vectors and custom log
         let mut footstep = Footstep::new(8);
-
-        footstep.add_title("Inputs\t");
-        footstep.add_values(vec![
-            ("0", inputs[0]),
-            ("1", inputs[1]),
-            ("2", inputs[2]),
-            ("3", inputs[3]),
-            ("4", inputs[4]),
-            ("5", inputs[5]),
-            ("6", inputs[6]),
-        ]);
 
         footstep.add_title_with_value("Logits\t", &logits);
         footstep.add_title_with_value("Probs\t", &probs);
@@ -503,7 +487,6 @@ impl Node {
 
         if *self.batch_sampled.read().unwrap() {
             self.report(
-                inputs.as_slice().try_into().unwrap(),
                 logits.into_raw_vec_and_offset().0.try_into().unwrap(),
                 probs.as_slice().try_into().unwrap(),
                 action,

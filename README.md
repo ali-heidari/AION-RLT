@@ -27,7 +27,7 @@ It’s part of the **AIXKER ecosystem**, an initiative to bring **AI-native inte
 ```bash
 # Clone the repository
 git clone https://github.com/ali-heidari/aixker-rlt.git
-cd aion-rlt
+cd aixker-rlt
 
 # Build the project using Cargo
 cargo build --release

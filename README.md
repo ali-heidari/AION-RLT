@@ -1,14 +1,14 @@
-# AION-RLT
-Lightweight reinforcement learning trainer in Rust — modular, fast, and designed for adaptive AI systems. Part of the AIONX ecosystem.
+# Aixker-RLT
+Lightweight reinforcement learning trainer in Rust — modular, fast, and designed for adaptive AI systems. Part of the AIXKER ecosystem.
 
 ![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
 ![Rust](https://img.shields.io/badge/Rust-1.9+-orange)
-![Build](https://img.shields.io/github/actions/workflow/status/yourusername/aion-rlt/ci.yml)
+![Build](https://img.shields.io/github/actions/workflow/status/yourusername/aixker-rlt/ci.yml)
 
 ## Overview
-AION-RLT (AION Reinforcement Learning Trainer) is a minimal, modular, and production-ready framework for training and evaluating reinforcement learning (RL) models — designed to be embedded in real systems like load balancers, protocol agents, and distributed services.
+Aixker-RLT (AIXKER Reinforcement Learning Trainer) is a minimal, modular, and production-ready framework for training and evaluating reinforcement learning (RL) models — designed to be embedded in real systems like load balancers, protocol agents, and distributed services.
 
-It’s part of the **AIONX ecosystem**, an initiative to bring **AI-native intelligence** into modern infrastructure — but AION-RLT can also be used as a **standalone RL framework** in any project.
+It’s part of the **AIXKER ecosystem**, an initiative to bring **AI-native intelligence** into modern infrastructure — but AIXKER-RLT can also be used as a **standalone RL framework** in any project.
 
 ---
 
@@ -26,8 +26,8 @@ It’s part of the **AIONX ecosystem**, an initiative to bring **AI-native intel
 
 ```bash
 # Clone the repository
-git clone https://github.com/ali-heidari/aion-rlt.git
-cd aion-rlt
+git clone https://github.com/ali-heidari/aixker-rlt.git
+cd aixker-rlt
 
 # Build the project using Cargo
 cargo build --release
@@ -39,7 +39,7 @@ cargo build --release
 
 ```rust
 // Example pseudo-code (Rust-like)
-use aion_rlt::Trainer;
+use aixker_rlt::Trainer;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
     let state = Arc::new(Mutex::new(SyntheticState::new()));
     let cloned_state = Arc::clone(&state);
 
-    aion_rlt::initialize(load_config().unwrap());
+    aixker_rlt::initialize(load_config().unwrap());
 
     Node::start(
         move |lowest_state| get_features(&mut cloned_state.lock().unwrap(), lowest_state),
@@ -75,7 +75,7 @@ async fn main() -> Result<()> {
 * [x] Dynamic hyperparameter tuning
 * [x] Improved sample efficiency for online learning
 * [ ] CLI for model training and exporting
-* [x] Integration with AION Metrics Collector
+* [x] Integration with AIXKER Metrics Collector
 * [ ] Release first stable API
 * [ ] Define inputs
 
@@ -95,16 +95,16 @@ Please follow the [Rust community style guide](https://doc.rust-lang.org/1.0.0/s
 
 ## License
 
-AION-RLT is released under the **Apache 2.0 License**.
-© 2025 Ali — part of the [AIONX Project](https://github.com/AIONX).
+AIXKER-RLT is released under the **Apache 2.0 License**.
+© 2025 Ali — part of the [AIXKER Project](https://github.com/AIXKER).
 
-> Commercial licensing available through AIONX for enterprise integration.
+> Commercial licensing available through AIXKER for enterprise integration.
 
 ---
 
 ## Related Projects / Ecosystem
 
-* **[AIONX Agent](https://github.com/AIONX/aionx-agent)** — AI-native node agent using AION-RLT
+* **[Aixker Agent](https://github.com/Aixker/aixker-agent)** — AI-native node agent using Aixker-RLT
 
 
 ---
@@ -113,6 +113,6 @@ AION-RLT is released under the **Apache 2.0 License**.
 
 * GitHub: [ali-heidari](https://github.com/ali-heidari)
 * Email: [ali-heidaril@outlook.com](mailto:ali-heidari@outlook.com)
-* AIONX: [https://github.com/AIONX](https://github.com/AIONX)
+* AIXKER: [https://github.com/AIXKER](https://github.com/AIXKER)
 
 

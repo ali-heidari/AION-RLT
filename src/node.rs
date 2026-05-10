@@ -64,9 +64,9 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(epsilon: f32, temperature: f32, mode: RunningMode) -> Self {
+    pub fn new(epsilon: f32, temperature: f32, mode: RunningMode, i: &str) -> Self {
         Self {
-            model: Arc::new(RwLock::new(Model::new().load_model().unwrap())),
+            model: Arc::new(RwLock::new(Model::new(i).load_model().unwrap())),
             buffer: Arc::new(RwLock::new(ReplayBuffer::new(CONFIG().reply_capacity))),
             loss: Arc::new(RwLock::new(0.0)),
             epsilon: RwLock::new(epsilon),
@@ -84,12 +84,16 @@ impl Node {
         }
     }
 
-    pub async fn start<F, H>(input_bearer: F, compute_reward_with_success: H, mode: RunningMode)
-    where
+    pub async fn start<F, H>(
+        input_bearer: F,
+        compute_reward_with_success: H,
+        mode: RunningMode,
+        model_name: &str,
+    ) where
         F: Fn(u32) -> Vec<f32>,
-        H: Fn(&Vec<f32>, u32) -> (f32, bool),
+        H: Fn(&Vec<f32>, u32, u32) -> (f32, bool),
     {
-        let node = Arc::new(Node::new(0.05, 0.5, mode));
+        let node = Arc::new(Node::new(0.05, 0.5, mode, model_name));
         Node::set_default_factors(&node, node.mode);
         let mut worker = Worker::new(1);
         match node.mode {
@@ -113,8 +117,7 @@ impl Node {
                 let action_detail_guard = node.action_details.read().unwrap();
                 let total_avg: f32 = 1.0 / action_detail_guard.len() as f32;
 
-                let lowest_state = if
-                *node.diverging.read().unwrap() {
+                let lowest_state = if *node.diverging.read().unwrap() {
                     // u32::MAX
                     action_detail_guard
                         .iter()
@@ -131,6 +134,10 @@ impl Node {
                     u32::MAX
                 };
                 inputs = input_bearer(lowest_state);
+                if inputs.is_empty() {
+                    println!("EMPTY INPUT");
+                    break;
+                }
             }
             node.next(inputs, &mut math, &compute_reward_with_success);
 
@@ -454,10 +461,14 @@ impl Node {
         math: &mut ContinuousMath,
         compute_reward_with_success: F,
     ) where
-        F: Fn(&Vec<f32>, u32) -> (f32, bool),
+        F: Fn(&Vec<f32>, u32, u32) -> (f32, bool),
     {
         let (action, logits, probs) = infer_action(self, &inputs);
-        let (reward, success) = compute_reward_with_success(&inputs, action as u32);
+        let (reward, success) = compute_reward_with_success(
+            &inputs,
+            action as u32,
+            *self.counter.read().unwrap() as u32,
+        );
 
         let adjusted_reward = if *self.enable_adjustment.read().unwrap() {
             self.adjust_settings(action, reward, success)
@@ -468,7 +479,7 @@ impl Node {
         let ex = Experience {
             features: inputs.clone(),
             action: action as u8,
-            latency_ms: *inputs.get(5).unwrap(),
+            latency_ms: 0.0, //*inputs.get(5).unwrap(),
             reward: adjusted_reward,
             success,
             timestamp_ms: Instant::now().elapsed().as_millis(),

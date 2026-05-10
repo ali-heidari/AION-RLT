@@ -5,8 +5,9 @@ use ndarray::{Array1, Array2, Axis};
 use ndarray_rand::rand::distributions::Uniform;
 use ndarray_rand::RandomExt;
 use serde::{Deserialize, Serialize};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::Write;
+use std::u8;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Model {
@@ -15,13 +16,14 @@ pub struct Model {
     w2: Array2<f32>,
     b2: Array1<f32>,
     pub snapshot: String,
+    id: String,
 }
 
 impl Model {
-    pub fn new() -> Self {
+    pub fn new(id: &str) -> Self {
         let mut rng = rand::thread_rng();
         let uniform = Uniform::new(-0.1, 0.1);
-        Self {
+        let this = Self {
             w1: Array2::random_using(
                 (CONFIG().input_number, CONFIG().hidden_layers),
                 uniform,
@@ -35,7 +37,16 @@ impl Model {
             ),
             b2: Array1::zeros(CONFIG().output_number),
             snapshot: String::new(),
-        }
+            id: id.to_owned(),
+        };
+
+        OpenOptions::new()
+            .write(true)
+            .create(true) // Creates if not exists
+            .open(this.model_path())
+            .ok();
+
+        this
     }
 
     fn relu(x: &Array2<f32>) -> Array2<f32> {
@@ -114,18 +125,22 @@ impl Model {
         rewards.mean().unwrap_or(0.0)
     }
 
+    fn model_path(&self) -> String {
+        "./models/".to_owned() + self.id.as_str() + "." + CONFIG().model_name.as_str()
+    }
+
     pub fn save_model(&self) -> anyhow::Result<()> {
         let json = serde_json::to_string(self)?;
-        let mut file = File::create(CONFIG().model_name.as_str())?;
+        let mut file = File::create(self.model_path())?;
         file.write_all(json.as_bytes())?;
         Ok(())
     }
 
     pub fn load_model(&self) -> anyhow::Result<Model> {
-        let data = std::fs::read_to_string(CONFIG().model_name.as_str())?.replace("null", "0.0");
+        let data = std::fs::read_to_string(self.model_path())?.replace("null", "0.0");
         let model = match serde_json::from_str(&data) {
             std::result::Result::Ok(m) => m,
-            Err(_) => Model::new(),
+            Err(_) => Model::new(&self.id),
         };
         Ok(model)
     }

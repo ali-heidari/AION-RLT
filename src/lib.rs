@@ -4,12 +4,13 @@ use crate::configurations::Configurations;
 
 pub mod configurations;
 mod experience;
-mod infer_action;
+pub mod infer_action;
 mod model;
 pub mod node;
 mod reply_buffer;
 mod worker;
 mod footstep;
+pub use crate::node::RunningMode;
 
 pub static CONFIG: OnceLock<Arc<Configurations>> = OnceLock::new();
 
@@ -20,4 +21,6 @@ pub fn initialize(config: Arc<Configurations>) {
 pub fn get_config() -> Arc<Configurations> {
     let config = CONFIG.get().unwrap();
     config.clone()
+
+    
 }

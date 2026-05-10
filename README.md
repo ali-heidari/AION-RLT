@@ -96,7 +96,7 @@ Please follow the [Rust community style guide](https://doc.rust-lang.org/1.0.0/s
 ## License
 
 AIXKER-RLT is released under the **Apache 2.0 License**.
-© 2025 Ali — part of the [AIXKER Project](https://github.com/AIXKER).
+© 2026 Ali — part of the [AIXKER Project](https://github.com/AIXKER).
 
 > Commercial licensing available through AIXKER for enterprise integration.
 

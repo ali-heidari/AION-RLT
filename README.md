@@ -102,6 +102,16 @@ AIXKER-RLT is released under the **Apache 2.0 License**.
 
 ---
 
+## Documentation
+
+This repository includes a `docs/` folder containing readable Markdown documentation and an `index.md` landing page.
+
+## Standards
+
+This project follows the `ai-agent-standards` conventions. The main AI agent guidance is documented in `.github/copilot-instructions.md`, and shared standard files are available at:
+
+- `https://github.com/ali-heidari/ai-agent-standards`
+
 ## Related Projects / Ecosystem
 
 * **[Aixker Agent](https://github.com/Aixker/aixker-agent)** — AI-native node agent using Aixker-RLT

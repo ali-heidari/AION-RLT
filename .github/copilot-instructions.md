@@ -1,5 +1,7 @@
 # AION-RLT - AI Coding Instructions
 
+This file is derived from `ai-agent-standards/instructions.md` and localizes the standard AI agent guidance for this repository.
+
 ## Architecture Overview
 
 **AION-RLT** (AION Reinforcement Learning Trainer) is a **general-purpose, lightweight RL framework** designed to be embedded in applications like trading bots, adaptive load balancers, or protocol agents. It's NOT specific to trading — it's a reusable RL engine.

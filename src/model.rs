@@ -126,7 +126,11 @@ impl Model {
     }
 
     fn model_path(&self) -> String {
-        "./models/".to_owned() + self.id.as_str() + "." + CONFIG().model_name.as_str()
+        let dir = "./models";
+        if let Err(err) = std::fs::create_dir_all(dir) {
+            warn!("Failed to create model directory '{}': {}", dir, err);
+        }
+        format!("{}/{}.{}", dir, self.id, CONFIG().model_name)
     }
 
     pub fn save_model(&self) -> anyhow::Result<()> {

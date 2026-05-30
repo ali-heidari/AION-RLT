@@ -1,6 +1,8 @@
 # Aixker-RLT
 Lightweight reinforcement learning trainer in Rust — modular, fast, and designed for adaptive AI systems. Part of the AIXKER ecosystem.
 
+![AIxKer Logo](docs/aixker-rlt-banner.png)
+
 ![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
 ![Rust](https://img.shields.io/badge/Rust-1.9+-orange)
 ![Build](https://img.shields.io/github/actions/workflow/status/yourusername/aixker-rlt/ci.yml)

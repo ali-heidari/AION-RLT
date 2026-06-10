@@ -8,9 +8,9 @@ Lightweight reinforcement learning trainer in Rust — modular, fast, and design
 ![Build](https://img.shields.io/github/actions/workflow/status/yourusername/aixker-rlt/ci.yml)
 
 ## Overview
-Aixker-RLT (AIXKER Reinforcement Learning Trainer) is a minimal, modular, and production-ready framework for training and evaluating reinforcement learning (RL) models — designed to be embedded in real systems like load balancers, protocol agents, and distributed services.
+Aixker-RLT (AIXKER Reinforcement Learning Trainer) is a minimal, modular, and production-ready framework for training and evaluating reinforcement learning (RL) models — designed to be embedded [...]
 
-It’s part of the **AIXKER ecosystem**, an initiative to bring **AI-native intelligence** into modern infrastructure — but AIXKER-RLT can also be used as a **standalone RL framework** in any project.
+It’s part of the **AIXKER ecosystem**, an initiative to bring **AI-native intelligence** into modern infrastructure — but AIXKER-RLT can also be used as a **standalone RL framework** in any pr[...]
 
 ---
 
@@ -117,7 +117,7 @@ This project follows the `ai-agent-standards` conventions. The main AI agent gui
 ## Related Projects / Ecosystem
 
 * **[Aixker Agent](https://github.com/Aixker/aixker-agent)** — AI-native node agent using Aixker-RLT
-
+* **[RLT-CLI](https://github.com/ali-heidari/RLT-CLI)** — Command-line interface (CLI) for Aixker-RLT
 
 ---
 
@@ -126,5 +126,4 @@ This project follows the `ai-agent-standards` conventions. The main AI agent gui
 * GitHub: [ali-heidari](https://github.com/ali-heidari)
 * Email: [ali-heidaril@outlook.com](mailto:ali-heidari@outlook.com)
 * AIXKER: [https://github.com/AIXKER](https://github.com/AIXKER)
-
 

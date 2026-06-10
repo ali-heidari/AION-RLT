@@ -76,9 +76,9 @@ async fn main() -> Result<()> {
 
 * [x] Dynamic hyperparameter tuning
 * [x] Improved sample efficiency for online learning
-* [ ] CLI for model training and exporting
+* [x] CLI for model training and exporting
 * [x] Integration with AIXKER Metrics Collector
-* [ ] Release first stable API
+* [x] Release first stable API
 * [ ] Define inputs
 
 ---

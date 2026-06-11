@@ -1,3 +1,4 @@
+use crate::configurations::ComputeBackend;
 use crate::{footstep::Footstep, get_config as CONFIG};
 use aion_math::continuous_math::ContinuousMath;
 use aion_math::math::Math;
@@ -66,7 +67,13 @@ pub struct Node {
 impl Node {
     pub fn new(epsilon: f32, temperature: f32, mode: RunningMode, i: &str) -> Self {
         Self {
-            model: Arc::new(RwLock::new(Model::new(i).load_model().unwrap())),
+            model: Arc::new(RwLock::new({
+                let mut model = Model::new(i).load_model().unwrap();
+                if CONFIG().backend == ComputeBackend::Gpu {
+                    model.enable_gpu();
+                }
+                model
+            })),
             buffer: Arc::new(RwLock::new(ReplayBuffer::new(CONFIG().reply_capacity))),
             loss: Arc::new(RwLock::new(0.0)),
             epsilon: RwLock::new(epsilon),

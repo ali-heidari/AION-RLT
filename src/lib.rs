@@ -6,10 +6,12 @@ pub mod configurations;
 mod experience;
 pub mod infer_action;
 mod model;
+mod models;
 pub mod node;
 mod reply_buffer;
 mod worker;
 mod footstep;
+pub use crate::configurations::ComputeBackend;
 pub use crate::node::RunningMode;
 
 pub static CONFIG: OnceLock<Arc<Configurations>> = OnceLock::new();

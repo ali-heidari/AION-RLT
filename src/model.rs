@@ -1,12 +1,14 @@
 use crate::get_config as CONFIG;
+use crate::models::gpu_model::GpuModel;
 use anyhow::Ok;
-use log::warn;
+use log::{info, warn};
 use ndarray::{Array1, Array2, Axis};
 use ndarray_rand::rand::distributions::Uniform;
 use ndarray_rand::RandomExt;
 use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
+use std::sync::Arc;
 use std::u8;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -17,6 +19,10 @@ pub struct Model {
     b2: Array1<f32>,
     pub snapshot: String,
     id: String,
+    /// GPU backend, enabled via `Configurations::backend = Gpu`.
+    /// Not serialized; checkpoints stay backend-agnostic.
+    #[serde(skip)]
+    gpu: Option<Arc<GpuModel>>,
 }
 
 impl Model {
@@ -38,6 +44,7 @@ impl Model {
             b2: Array1::zeros(CONFIG().output_number),
             snapshot: String::new(),
             id: id.to_owned(),
+            gpu: None,
         };
 
         OpenOptions::new()
@@ -49,11 +56,38 @@ impl Model {
         this
     }
 
+    /// Enable the GPU compute backend. Falls back to CPU (with a warning)
+    /// when no compatible adapter is available.
+    pub fn enable_gpu(&mut self) {
+        match GpuModel::new(
+            &self.w1,
+            &self.b1,
+            &self.w2,
+            &self.b2,
+            CONFIG().batch_size.max(1) as usize,
+        ) {
+            std::result::Result::Ok(gpu) => {
+                info!("model '{}' running on the GPU backend", self.id);
+                self.gpu = Some(Arc::new(gpu));
+            }
+            Err(e) => {
+                warn!("GPU backend unavailable, falling back to CPU: {e}");
+                self.gpu = None;
+            }
+        }
+    }
+
     fn relu(x: &Array2<f32>) -> Array2<f32> {
         x.mapv(|v| v.max(0.0))
     }
 
     pub fn forward(&self, x: &Array2<f32>) -> Array2<f32> {
+        if let Some(gpu) = &self.gpu {
+            match gpu.forward(x) {
+                std::result::Result::Ok(logits) => return logits,
+                Err(e) => warn!("GPU forward failed, using CPU: {e}"),
+            }
+        }
         let h = Self::relu(&(x.dot(&self.w1) + &self.b1));
         h.dot(&self.w2) + &self.b2
     }
@@ -97,6 +131,21 @@ impl Model {
         rewards: &Array1<f32>,
         lr: f32,
     ) -> f32 {
+        if let Some(gpu) = self.gpu.clone() {
+            match gpu.reinforce(
+                x,
+                actions,
+                rewards,
+                lr,
+                &mut self.w1,
+                &mut self.b1,
+                &mut self.w2,
+                &mut self.b2,
+            ) {
+                std::result::Result::Ok(loss) => return loss,
+                Err(e) => warn!("GPU reinforce failed, using CPU: {e}"),
+            }
+        }
         let h_pre = x.dot(&self.w1) + &self.b1;
         let h = Self::relu(&h_pre);
         let logits = h.dot(&self.w2) + &self.b2;
@@ -169,6 +218,10 @@ impl Model {
             if !x.is_finite() || x.abs() > 1e6 {
                 *x = 0.0;
             }
+        }
+        // Keep the GPU copy in sync with the sanitized CPU weights.
+        if let Some(gpu) = &self.gpu {
+            gpu.upload_weights(&self.w1, &self.b1, &self.w2, &self.b2);
         }
     }
 }

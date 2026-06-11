@@ -155,7 +155,12 @@ impl GpuModel {
         let output = w2.dim().1;
         let max_batch = max_batch.max(1);
 
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        // PRIMARY = Vulkan / Metal / DX12 only. Skipping the OpenGL/EGL
+        // backend avoids noisy Mesa probe warnings (libEGL / ZINK) on Linux.
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::PRIMARY,
+            ..Default::default()
+        });
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
             ..Default::default()

@@ -10,5 +10,6 @@ This project follows the `ai-agent-standards` conventions.
 
 ## AI agent instructions
 
-The local AI instruction file is located at `.github/copilot-instructions.md`.
+The local AI instruction file is located at `.agent/agent-instructions.md`, with
+the shared base convention files under `.agent/base/`.
 The canonical standard base is maintained in `https://github.com/ali-heidari/ai-agent-standards`.

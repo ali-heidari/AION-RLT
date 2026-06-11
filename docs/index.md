@@ -6,4 +6,4 @@ This folder contains human-readable documentation for the AION-RLT project.
 
 - [Architecture](architecture.md)
 - [Standards](standards.md)
-- [Agent instructions](../.github/copilot-instructions.md)
+- [Agent instructions](../.agent/agent-instructions.md)

@@ -17,7 +17,7 @@ pub struct Worker {
 impl Worker {
     pub fn new(id: u32) -> Self {
         Self {
-            id: id,
+            id,
             learning_rate: 0.00001,
         }
     }
@@ -69,8 +69,7 @@ impl Worker {
 
         let model = node.model.write().unwrap();
         let loss = self.train_on_batch(batch, model).unwrap();
-        let mut size = 0;
-        size = node.batch_history.read().unwrap().len();
+        let size = node.batch_history.read().unwrap().len();
 
         node.set_loss(size as u32 + 1, loss);
         Ok(())

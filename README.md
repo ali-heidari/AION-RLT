@@ -2,10 +2,10 @@
 Lightweight reinforcement learning trainer in Rust — modular, fast, and designed for adaptive AI systems. Part of the AIXKER ecosystem.
 
 ![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
-![Rust](https://img.shields.io/badge/Rust-1.9+-orange)
-![Build](https://img.shields.io/github/actions/workflow/status/yourusername/aixker-rlt/ci.yml)
+![Rust](https://img.shields.io/badge/Rust-2021_edition-orange)
 
 ## Overview
+
 Aixker-RLT (AIXKER Reinforcement Learning Trainer) is a minimal, modular, and production-ready framework for training and evaluating reinforcement learning (RL) models — designed to be embedded in real systems like load balancers, protocol agents, and distributed services.
 
 It’s part of the **AIXKER ecosystem**, an initiative to bring **AI-native intelligence** into modern infrastructure — but AIXKER-RLT can also be used as a **standalone RL framework** in any project.
@@ -14,22 +14,29 @@ It’s part of the **AIXKER ecosystem**, an initiative to bring **AI-native inte
 
 ## 🚀 Features
 
-- ⚡ **Lightweight Core** — Simple modular design with minimal dependencies.  
-- 🧩 **Customizable Inputs/Outputs** — Accept any number of parameters for flexible training.  
-- 🔁 **Continuous Learning** — Supports online and on-device adaptation in production.  
-- 🧠 **Multi-Agent Ready** — Built to scale across multiple agents or nodes.  
-- 📊 **Logging & Metrics Hooks** — Integrates easily with external metric collectors.  
+- ⚡ **Lightweight Core** — Simple modular design with minimal dependencies.
+- 🧩 **Customizable Inputs/Outputs** — Accept any number of parameters for flexible training.
+- 🔁 **Continuous Learning** — Supports online and on-device adaptation in production.
+- 🧠 **Multi-Agent Ready** — Built to scale across multiple agents or nodes.
+- 📊 **Logging & Metrics Hooks** — Integrates easily with external metric collectors.
+- 🖥️ **CPU-first compute** — Pure-Rust `ndarray` backend; GPU backend (via `wgpu`) in development.
 
 ---
 
 ## Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/ali-heidari/aixker-rlt.git
-cd aixker-rlt
+Use it as a Git dependency in your `Cargo.toml`:
 
-# Build the project using Cargo
+```toml
+[dependencies]
+aixker-rlt = { git = "https://github.com/ali-heidari/Aixker-RLT" }
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/ali-heidari/Aixker-RLT.git
+cd Aixker-RLT
 cargo build --release
 ```
 
@@ -38,21 +45,23 @@ cargo build --release
 ## 🧬 Example Usage
 
 ```rust
-// Example pseudo-code (Rust-like)
-use aixker_rlt::Trainer;
+use aixker_rlt::{initialize, node::Node, RunningMode};
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> anyhow::Result<()> {
     env_logger::init();
     let state = Arc::new(Mutex::new(SyntheticState::new()));
     let cloned_state = Arc::clone(&state);
 
-    aixker_rlt::initialize(load_config().unwrap());
+    // Load configuration once at startup
+    initialize(load_config().unwrap());
 
     Node::start(
+        // Feature provider: returns the current state as a feature vector
         move |lowest_state| get_features(&mut cloned_state.lock().unwrap(), lowest_state),
+        // Reward function: scores the chosen action
         |x, y| compute_reward_with_success(x, y as u8),
-        CONFIG.get().unwrap().mode,
+        RunningMode::Training,
     )
     .await;
 
@@ -60,9 +69,68 @@ async fn main() -> Result<()> {
 }
 ```
 
+### Running modes
+
+`Node::start` takes a `RunningMode`:
+
+| Mode | Description |
+|------|-------------|
+| `Training` | Continuous online training |
+| `TrainingWithInterval` | Training on a fixed interval (`interval_secs`) |
+| `Infer` | Inference only — load a trained model and produce actions |
+
+---
+
+## ⚙️ CPU and GPU usage
+
+### CPU (default — fully supported)
+
+All training and inference currently run on the **CPU** through a pure-Rust
+`ndarray` implementation. No special flags or features are needed:
+
+```bash
+cargo build --release
+```
+
+- The async runtime is Tokio's multi-threaded scheduler, so training workers
+  use multiple cores out of the box.
+- To limit core usage, set the Tokio worker thread count in your host
+  application (e.g. `#[tokio::main(worker_threads = 4)]`).
+
+### GPU (experimental — in development)
+
+A GPU compute backend based on **`wgpu`** (Vulkan / Metal / DX12 / OpenGL) is
+under active development. The repository already contains the WGSL compute
+shaders for the pipeline:
+
+- `src/forward.wgsl` — forward pass
+- `src/softmax.wgsl` — action probabilities
+- `src/reinforce.wgsl` — REINFORCE gradient step
+- `src/weight-update.wgsl` — weight updates
+
+The GPU model (`src/models/gpu-model.rs`) is not yet wired into the public
+API, so **GPU execution is not functional yet** — today every build runs on
+CPU regardless of available hardware. Once complete, the backend will be
+selectable at runtime and will work on any GPU supported by `wgpu` (NVIDIA,
+AMD, Intel, Apple Silicon) without CUDA.
+
 ---
 
 ## Configuration
+
+Configuration is provided at startup via `initialize(...)` with a `Configurations` struct (deserializable with `serde`):
+
+| Field | Description |
+|-------|-------------|
+| `input_number` | Number of input features |
+| `output_number` | Number of possible actions |
+| `hidden_layers` | Hidden layer size |
+| `batch_size` / `total_batches` | Training batch settings |
+| `reply_capacity` | Replay buffer capacity |
+| `interval_secs` | Interval for `TrainingWithInterval` mode |
+| `model_name` | Checkpoint file name |
+| `log_interval` | Metric logging interval |
+| `mode` | `RunningMode` (`Training`, `TrainingWithInterval`, `Infer`) |
 
 * **Inputs:** Any numeric parameters representing the system/environment state
 * **Outputs:** Actions or decisions produced by the RL model
@@ -74,8 +142,9 @@ async fn main() -> Result<()> {
 
 * [x] Dynamic hyperparameter tuning
 * [x] Improved sample efficiency for online learning
-* [ ] CLI for model training and exporting
+* [x] CLI for model training and exporting — see [RLT-CLI](https://github.com/ali-heidari/RLT-CLI)
 * [x] Integration with AIXKER Metrics Collector
+* [ ] GPU compute backend (`wgpu` + WGSL shaders)
 * [ ] Release first stable API
 * [ ] Define inputs
 
@@ -104,25 +173,26 @@ AIXKER-RLT is released under the **Apache 2.0 License**.
 
 ## Documentation
 
-This repository includes a `docs/` folder containing readable Markdown documentation and an `index.md` landing page.
+This repository includes a `docs/` folder containing readable Markdown documentation and an [index.md](docs/index.md) landing page:
+
+- [architecture.md](docs/architecture.md)
+- [standards.md](docs/standards.md)
 
 ## Standards
 
-This project follows the `ai-agent-standards` conventions. The main AI agent guidance is documented in `.github/copilot-instructions.md`, and shared standard files are available at:
+This project follows the `ai-agent-standards` conventions. The main AI agent guidance is documented in [.agent/agent-instructions.md](.agent/agent-instructions.md), and shared standard files are available at:
 
-- `https://github.com/ali-heidari/ai-agent-standards`
+- [ali-heidari/ai-agent-standards](https://github.com/ali-heidari/ai-agent-standards)
 
 ## Related Projects / Ecosystem
 
+* **[RLT-CLI](https://github.com/ali-heidari/RLT-CLI)** — command-line interface for training, inference, and export
 * **[Aixker Agent](https://github.com/Aixker/aixker-agent)** — AI-native node agent using Aixker-RLT
-
 
 ---
 
 ## Contact / Community
 
 * GitHub: [ali-heidari](https://github.com/ali-heidari)
-* Email: [ali-heidaril@outlook.com](mailto:ali-heidari@outlook.com)
+* Email: [ali-heidari@outlook.com](mailto:ali-heidari@outlook.com)
 * AIXKER: [https://github.com/AIXKER](https://github.com/AIXKER)
-
-

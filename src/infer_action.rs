@@ -2,7 +2,7 @@ use crate::get_config as CONFIG;
 use crate::model::Model;
 
 use super::node::Node;
-use ndarray::{Array, Array2, ArrayBase};
+use ndarray::{Array, Array2};
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::Rng;
 

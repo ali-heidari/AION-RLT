@@ -2,6 +2,7 @@ use crate::configurations::ComputeBackend;
 use crate::{footstep::Footstep, get_config as CONFIG};
 use aion_math::continuous_math::ContinuousMath;
 use aion_math::math::Math;
+use log::info;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
@@ -142,7 +143,7 @@ impl Node {
                 };
                 inputs = input_bearer(lowest_state);
                 if inputs.is_empty() {
-                    println!("EMPTY INPUT");
+                    info!("empty input received; stopping the node loop");
                     break;
                 }
             }

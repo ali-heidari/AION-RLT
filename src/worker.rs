@@ -60,7 +60,7 @@ impl Worker {
         let buffer = node.buffer.read().unwrap();
         if buffer.len() < CONFIG().batch_size as usize {
             drop(buffer);
-            println!("buffer drop");
+            info!("replay buffer below batch size; skipping training step");
             return Ok(());
         }
 

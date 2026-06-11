@@ -19,7 +19,7 @@ It’s part of the **AIXKER ecosystem**, an initiative to bring **AI-native inte
 - 🔁 **Continuous Learning** — Supports online and on-device adaptation in production.
 - 🧠 **Multi-Agent Ready** — Built to scale across multiple agents or nodes.
 - 📊 **Logging & Metrics Hooks** — Integrates easily with external metric collectors.
-- 🖥️ **CPU-first compute** — Pure-Rust `ndarray` backend; GPU backend (via `wgpu`) in development.
+- 🖥️ **CPU & GPU compute** — Pure-Rust `ndarray` backend by default; optional GPU backend via `wgpu` (`backend = "Gpu"`).
 
 ---
 
@@ -62,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
         // Reward function: scores the chosen action
         |x, y| compute_reward_with_success(x, y as u8),
         RunningMode::Training,
+        "my-model.json",
     )
     .await;
 
@@ -74,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
 `Node::start` takes a `RunningMode`:
 
 | Mode | Description |
-|------|-------------|
+| ---- | ----------- |
 | `Training` | Continuous online training |
 | `TrainingWithInterval` | Training on a fixed interval (`interval_secs`) |
 | `Infer` | Inference only — load a trained model and produce actions |
@@ -85,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
 
 ### CPU (default — fully supported)
 
-All training and inference currently run on the **CPU** through a pure-Rust
+By default, training and inference run on the **CPU** through a pure-Rust
 `ndarray` implementation. No special flags or features are needed:
 
 ```bash
@@ -97,22 +98,37 @@ cargo build --release
 - To limit core usage, set the Tokio worker thread count in your host
   application (e.g. `#[tokio::main(worker_threads = 4)]`).
 
-### GPU (experimental — in development)
+### GPU (selectable via configuration)
 
-A GPU compute backend based on **`wgpu`** (Vulkan / Metal / DX12 / OpenGL) is
-under active development. The repository already contains the WGSL compute
-shaders for the pipeline:
+A GPU compute backend based on **`wgpu`** (Vulkan / Metal / DX12 / OpenGL)
+runs the full pipeline — forward pass, softmax, REINFORCE gradients, and
+weight updates — as compute shaders. It works on any GPU supported by `wgpu`
+(NVIDIA, AMD, Intel, Apple Silicon) without CUDA.
 
-- `src/forward.wgsl` — forward pass
-- `src/softmax.wgsl` — action probabilities
-- `src/reinforce.wgsl` — REINFORCE gradient step
-- `src/weight-update.wgsl` — weight updates
+Select it with the `backend` field of `Configurations` (TOML or struct):
 
-The GPU model (`src/models/gpu-model.rs`) is not yet wired into the public
-API, so **GPU execution is not functional yet** — today every build runs on
-CPU regardless of available hardware. Once complete, the backend will be
-selectable at runtime and will work on any GPU supported by `wgpu` (NVIDIA,
-AMD, Intel, Apple Silicon) without CUDA.
+```toml
+backend = "Gpu"   # default: "Cpu" — the field is optional
+```
+
+Behavior:
+
+- **CPU is always the default**; omitting `backend` keeps existing configs
+  working unchanged.
+- If no compatible GPU adapter is found at startup, the library logs a
+  warning and **falls back to CPU automatically** — it never crashes.
+- Model checkpoints stay backend-agnostic JSON: after each GPU training
+  batch the updated weights are synced back to the CPU copy, so you can
+  train on GPU and infer on CPU (or vice versa) with the same file.
+
+The compute shaders live in `src/*.wgsl` (`forward`, `softmax`, `reinforce`,
+`grad-weights`, `grad-bias`, `grad-hidden`, `weight-update`), orchestrated by
+`src/models/gpu_model.rs`. GPU/CPU parity is covered by the
+`gpu_matches_cpu` unit test (`cargo test gpu_matches_cpu`).
+
+> Note: for very small networks (e.g. 8×16×3) CPU is usually faster — GPU
+> dispatch overhead dominates. The GPU backend pays off as `hidden_layers`,
+> `input_number`, and `batch_size` grow.
 
 ---
 
@@ -121,7 +137,7 @@ AMD, Intel, Apple Silicon) without CUDA.
 Configuration is provided at startup via `initialize(...)` with a `Configurations` struct (deserializable with `serde`):
 
 | Field | Description |
-|-------|-------------|
+| ----- | ----------- |
 | `input_number` | Number of input features |
 | `output_number` | Number of possible actions |
 | `hidden_layers` | Hidden layer size |
@@ -131,22 +147,23 @@ Configuration is provided at startup via `initialize(...)` with a `Configuration
 | `model_name` | Checkpoint file name |
 | `log_interval` | Metric logging interval |
 | `mode` | `RunningMode` (`Training`, `TrainingWithInterval`, `Infer`) |
+| `backend` | Optional `ComputeBackend` (`Cpu` default, `Gpu`) |
 
-* **Inputs:** Any numeric parameters representing the system/environment state
-* **Outputs:** Actions or decisions produced by the RL model
-* **Logging:** Supports integration with external metric collectors (Falcon Metrics, Prometheus, etc.)
+- **Inputs:** Any numeric parameters representing the system/environment state
+- **Outputs:** Actions or decisions produced by the RL model
+- **Logging:** Supports integration with external metric collectors (Falcon Metrics, Prometheus, etc.)
 
 ---
 
 ## Roadmap
 
-* [x] Dynamic hyperparameter tuning
-* [x] Improved sample efficiency for online learning
-* [x] CLI for model training and exporting — see [RLT-CLI](https://github.com/ali-heidari/RLT-CLI)
-* [x] Integration with AIXKER Metrics Collector
-* [ ] GPU compute backend (`wgpu` + WGSL shaders)
-* [ ] Release first stable API
-* [ ] Define inputs
+- [x] Dynamic hyperparameter tuning
+- [x] Improved sample efficiency for online learning
+- [x] CLI for model training and exporting — see [RLT-CLI](https://github.com/ali-heidari/RLT-CLI)
+- [x] Integration with AIXKER Metrics Collector
+- [x] GPU compute backend (`wgpu` + WGSL shaders)
+- [ ] Release first stable API
+- [ ] Define inputs
 
 ---
 
@@ -186,13 +203,13 @@ This project follows the `ai-agent-standards` conventions. The main AI agent gui
 
 ## Related Projects / Ecosystem
 
-* **[RLT-CLI](https://github.com/ali-heidari/RLT-CLI)** — command-line interface for training, inference, and export
-* **[Aixker Agent](https://github.com/Aixker/aixker-agent)** — AI-native node agent using Aixker-RLT
+- **[RLT-CLI](https://github.com/ali-heidari/RLT-CLI)** — command-line interface for training, inference, and export
+- **[Aixker Agent](https://github.com/Aixker/aixker-agent)** — AI-native node agent using Aixker-RLT
 
 ---
 
 ## Contact / Community
 
-* GitHub: [ali-heidari](https://github.com/ali-heidari)
-* Email: [ali-heidari@outlook.com](mailto:ali-heidari@outlook.com)
-* AIXKER: [https://github.com/AIXKER](https://github.com/AIXKER)
+- GitHub: [ali-heidari](https://github.com/ali-heidari)
+- Email: [ali-heidari@outlook.com](mailto:ali-heidari@outlook.com)
+- AIXKER: [https://github.com/AIXKER](https://github.com/AIXKER)

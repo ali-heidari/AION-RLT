@@ -36,7 +36,7 @@ bots. It is a reusable RL engine, not specific to any domain.
 | `src/experience.rs` | `Experience` struct: features, action, latency_ms, reward, success, timestamp_ms |
 | `src/configurations.rs` | `Configurations` struct loaded at startup via `initialize()` |
 | `src/footstep/` | Internal diagnostics module |
-| `src/models/gpu-model.rs` + `src/*.wgsl` | Experimental GPU backend (wgpu) — **not yet wired into the module tree** |
+| `src/models/gpu_model.rs` + `src/*.wgsl` | GPU compute backend (wgpu), enabled via `Configurations::backend = Gpu` |
 
 ## Public API contract
 
@@ -65,9 +65,11 @@ All shared state (`model`, `buffer`, `epsilon`, `temperature`, `lr`) is behind
   experiences.
 - Multiple agents MUST NOT share a checkpoint `model_name` (corruption risk —
   use an ID suffix).
-- The GPU path (`wgpu`, WGSL shaders) is experimental scaffolding: do not
-  document or expose it as functional until it is declared in `lib.rs` and
-  implemented.
+- The compute backend defaults to CPU; GPU is opt-in via
+  `Configurations::backend = Gpu` and MUST fall back to CPU (with a warning)
+  when no adapter is available. GPU and CPU paths MUST stay numerically
+  equivalent — the `gpu_matches_cpu` test guards this; keep it passing when
+  touching `model.rs`, `gpu_model.rs`, or any `.wgsl` shader.
 
 ## Project-specific conventions
 

@@ -20,7 +20,7 @@ AION-RLT is a lightweight reinforcement learning trainer designed for embeddable
 - `src/experience.rs` — `Experience` struct definition
 - `src/configurations.rs` — `Configurations` struct and config loading
 - `src/footstep/` — internal diagnostics module
-- `src/models/gpu-model.rs`, `src/*.wgsl` — experimental GPU backend (not yet active)
+- `src/models/gpu_model.rs`, `src/*.wgsl` — GPU compute backend (selected via `backend = "Gpu"`)
 
 ## Node (`node.rs`)
 
@@ -112,6 +112,7 @@ Provided at startup via `initialize(...)`:
 | `model_name` (String) | Checkpoint file name |
 | `log_interval` (u64) | Logging frequency |
 | `mode` (RunningMode) | `Training`, `TrainingWithInterval`, or `Infer` |
+| `backend` (ComputeBackend, optional) | `Cpu` (default) or `Gpu` |
 
 **Critical contract:** `input_number` must equal the feature vector length and `output_number` must equal the action space size — a mismatch panics at model initialization.
 
@@ -129,7 +130,20 @@ Provided at startup via `initialize(...)`:
 - **New training algorithms**: modify `Model::reinforce()`, update the loss calculation, document reward expectations
 - **Different input/output sizes**: already supported via config — no code changes
 - **Custom metrics**: read `batch_history` / `success_rate_mean` through the `RwLock`s and export to your collector
-- **GPU backend**: WGSL shaders (`forward`, `softmax`, `reinforce`, `weight-update`) and a `GpuModel` stub exist but are not yet wired into `lib.rs` — CPU (`ndarray`) is the only functional backend today
+
+## GPU backend
+
+Setting `backend = "Gpu"` in the configuration routes `Model::forward` and `Model::reinforce` through `GpuModel` (`src/models/gpu_model.rs`), which runs the WGSL compute shaders via `wgpu` (Vulkan/Metal/DX12 — no CUDA required):
+
+- `forward.wgsl` — generic linear layer (dispatched per layer; ReLU flag in uniforms)
+- `softmax.wgsl` — row-wise temperature softmax
+- `reinforce.wgsl` — REINFORCE gradient w.r.t. logits
+- `grad-weights.wgsl` / `grad-bias.wgsl` / `grad-hidden.wgsl` — backprop gradients
+- `weight-update.wgsl` — SGD step
+
+Weights live in persistent GPU buffers and are downloaded back to the CPU copy after each training batch, so JSON checkpoints are backend-agnostic. `Model::sanitize` re-uploads the cleaned weights. If no GPU adapter is available, the library warns and falls back to CPU. Parity with the CPU path is asserted by the `gpu_matches_cpu` test.
+
+For small networks the CPU is typically faster; the GPU pays off as `hidden_layers`, `input_number`, and `batch_size` grow.
 
 ## Integration contract
 
